@@ -8,8 +8,8 @@ This is an **EX-word .d01 add-in**, not a ClassPad .hh3 add-in.
 
 - Browse candidate volumes drv0, drv1, drv2, crd0, crd1, crd2, sys0, sys1, rom0, rom1. Unsupported mounts are safely rejected, or shown as empty if the OS reports the same error as an empty directory.
 - Directory browsing includes all enumerated filenames, with no extension or hidden-file filtering.
-- Full-screen list, fixed 18-row window; the app does not cache a whole directory.
-- Hex viewer: 12 bytes per row with address, hex and ASCII; 216-byte pages let you browse huge files with little RAM.
+- Full-screen list, fixed 20-row window; the app does not cache a whole directory.
+- Hex viewer: 12 bytes per row with address, hex and ASCII; 240-byte pages let you browse huge files with little RAM.
 - Delete, rename, create file, create folder, copy, cut and paste using native EX-word filesystem calls.
 - Only one file in the clipboard, no recursive directory copying. Copy/cut avoids overwriting, and cut removes the original only if the copy succeeds.
 - Select a byte in the hex viewer, press E, enter two hex digits, press EXE twice to save (with confirmation).
@@ -22,7 +22,7 @@ This is an **EX-word .d01 add-in**, not a ClassPad .hh3 add-in.
 | ESC | Back one directory; exit at root | Return to browser; cancel edit |
 | AC/ON | Exit app | Exit app |
 | Up/Down | Move through list | Move 12 bytes |
-| Page Up/Down | Move 18 entries | Move 216 bytes |
+| Page Up/Down | Move 20 entries | Move 240 bytes |
 | Sound/Audio | File operations menu | No operation |
 | Left/Right | No operation | Previous/next byte |
 | E | No operation | Edit selected byte |
