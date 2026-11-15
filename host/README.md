@@ -1,0 +1,83 @@
+# EXWord Explorer - USB Remote
+
+The device has no native IP/TFTP stack. The EX-word uses USB bulk fxlink
+and a small EXFS/1 binary request/response protocol. The PC Python bridge
+offers a **localhost TFTP server** and a **desktop Tkinter file manager**,
+translating TFTP requests to USB filesystem operations.
+
+## Getting started
+
+1. Install EXWord Explorer on the EX-word and open its volume home screen.
+2. Select **USB Remote** and press EXE. Connect the USB cable.
+3. Download the GitHub Actions **EXWord-Explorer-host-linux** artifact,
+   unzip it, and run: python3 bridge.py
+4. The Tkinter GUI opens, and TFTP is served at 127.0.0.1:6969.
+
+Host artifact includes bridge.py, exfs.py and the compiled libfxlink.so.
+You need Python 3.10+, libusb-1.0 and Tkinter for the GUI. On Linux you
+might need udev permissions. On Windows use compatible libfxlink.dll and
+libusb-1.0.dll from USB_test beside the scripts, or pass --libfxlink.
+
+Options:
+- --no-gui: TFTP server without the desktop interface.
+- --no-tftp: desktop interface only.
+- --allow-write: enable uploading via TFTP (disabled by default).
+- --port 6969: choose a port, still bound to 127.0.0.1 only.
+
+The Tkinter GUI supports directory browsing, Send/Receive, mkdir,
+rename and delete. The USB interface serializes requests; one device at
+a time. The GUI requests confirmation before deletion.
+
+## Standard TFTP interoperability
+
+Any standard TFTP client in octet/binary mode can contact 127.0.0.1 on
+port 6969. An example remote file is drv0/CASIO/sample.dat.
+A virtual text file named .exword-list in any remote directory
+(e.g. drv0/CASIO/.exword-list) lists its directory entries for command
+line TFTP clients. This virtual file does not exist on the EX-word.
+TFTP has no directory listing or rename/delete/mkdir operations; those
+are provided by the desktop GUI.
+
+Uploads must target non-existing files and require --allow-write.
+The host will never overwrite existing files automatically. Both TFTP
+and the GUI stream bytes in 512-byte USB chunks. A failed upload tries
+to delete its partial target. Avoid working on firmware/system volumes.
+
+## Wire protocol: EXFS/1
+
+fxlink message application is "exfs"; type is "req" for host-to-device,
+"resp" for device-to-host. All fields are little-endian. This is NOT
+TFTP on the USB link; only the PC endpoint speaks TFTP.
+
+Request header has:
+  u32 request_id
+  u32 offset (byte offset, or directory entry index for LIST)
+  u16 length
+  u16 native_path_length
+  u8  command (1 LIST, 2 READ, 3 CREATE, 4 WRITE, 5 DELETE,
+               6 RENAME, 7 STAT, 8 PING)
+  u8  flags (CREATE bit 0 = folder)
+  followed by native path bytes and, for WRITE/RENAME, payload bytes.
+
+Response header has u32 request_id, i32 status, u32 total, followed
+by response bytes. status < 0 indicates a native filesystem error.
+total is directory entry count for LIST, file size for STAT/READ.
+LIST entries are [u8 is_directory, u8 name_length, name_bytes...].
+Messages are limited to 1024 bytes; file chunks <=512 bytes. Native
+paths must start with a valid volume (drv0/crd0/sys0/etc).
+
+## Security and hardware limitations
+
+The server binds only to localhost and does NOT provide authentication.
+Never forward the port outside the computer. Device writes to sys0 or
+other firmware volumes are risky and not guaranteed to be possible.
+
+The USB remote implementation is compiled and linked in CI, but the
+EX-word USB/OS filesystem coexistence must be verified on hardware.
+The USB_test project exercises fxlink mostly in its fx-CP demo; that is
+not proof that the same driver runs reliably on EX-word. Test read-only
+browsing and downloads before testing uploads.
+
+No firmware protections are bypassed. Hidden objects not returned by
+native EX-word enumeration remain inaccessible. TFTP uses 512-byte
+blocks and 16-bit block numbers; it is intended for normal sized files.
