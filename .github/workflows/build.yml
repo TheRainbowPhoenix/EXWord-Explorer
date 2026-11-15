@@ -81,6 +81,8 @@ jobs:
             -o host-dist/libfxlink.so \
             $(pkg-config --cflags --libs libusb-1.0) -lm
           cp host/exfs.py host/bridge.py host-dist/
+          cp /tmp/fxsdk-exword/bin/fxlink host-dist/
+          python3 -c 'import sys;sys.path.insert(0,"host");from exfs import FxlinkUSB; x=FxlinkUSB("host-dist/libfxlink.so"); x.close()'
           python3 -m compileall -q host
           python3 -m unittest discover -s host/tests -v
           python3 host/bridge.py --help >/dev/null
