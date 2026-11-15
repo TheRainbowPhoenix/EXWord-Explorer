@@ -1,5 +1,6 @@
 #include "preview.h"
 #include "explorer_fs.h"
+#include "explorer_usb.h"
 #include "readers/casio_bitmap.h"
 #include "readers/cjf.h"
 #include <gint/display.h>
@@ -18,7 +19,8 @@ static union { uint8_t glyph[2048]; uint8_t row[1100]; } scratch;
 
 /* The OS does not expose a persistent gint-world descriptor.
  * Cache adjacent reads, particularly the per-byte CJF run tokens and rows. */
-static uint8_t cache[2048];
+/* Shares the USB workspace; local preview and USB remote never coexist. */
+#define cache ex_shared_io
 static uint32_t cache_start;
 static int cache_size;
 
