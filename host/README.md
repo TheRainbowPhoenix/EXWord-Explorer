@@ -42,8 +42,10 @@ TFTP has no directory listing or rename/delete/mkdir operations; those
 are provided by the desktop GUI.
 
 Uploads must target non-existing files and require --allow-write.
-The host will never overwrite existing files automatically. Both TFTP
-and the GUI stream bytes in 512-byte USB chunks. A failed upload tries
+The host will never overwrite existing files automatically. TFTP uses 512-byte network blocks, while USB uses 2048-byte chunks
+with host-side caching to reduce USB round trips. The GUI streams to
+disk, displays bytes transferred, and offers Cancel. Cancellation takes
+effect between USB chunks. A failed upload tries
 to delete its partial target. Avoid working on firmware/system volumes.
 
 ## Wire protocol: EXFS/1
@@ -66,7 +68,8 @@ Response header has u32 request_id, i32 status, u32 total, followed
 by response bytes. status < 0 indicates a native filesystem error.
 total is directory entry count for LIST, file size for STAT/READ.
 LIST entries are [u8 is_directory, u8 name_length, name_bytes...].
-Messages are limited to 1024 bytes; file chunks <=512 bytes. Native
+EXFS request data chunks are limited to 2048 bytes; messages include
+the path and header in addition to that data. Native
 paths must start with a valid volume (drv0/data0/crd0/sys0/etc).
 
 ## Security and hardware limitations
@@ -102,3 +105,34 @@ once at connection and remains active automatically. You only need
 to update the **host Python scripts** for this fix; the device firmware
 is unchanged for the receive-lifecycle issue. To browse `data0`,
 update both host scripts and the EX-word package.
+
+## Faster transfers and cancellation
+
+TFTP's 512-byte DATA payload is a protocol requirement for classic
+RFC 1350 transfers, not the EXFS USB chunk size. The bridge now reads
+up to 2048 bytes per USB RPC and serves multiple 512-byte TFTP packets
+from the resulting cache. Writes combine up to four TFTP blocks before
+sending to the EX-word. Ordinary host GUI uploads/downloads stream
+2048-byte chunks directly from/to files without keeping whole files
+in memory.
+
+The GUI has a transfer progress bar and **Cancel** control. Download
+cancellation removes the temporary `.partial-exword` file; cancelling
+an upload attempts to delete the incomplete remote target. It is safe
+to ask for cancellation but the current USB transfer must finish first.
+On-device USB mode has a bottom-right **STOP USB** touch area plus
+ESC / AC-ON / Sound key. Device USB receives use a bounded timeout to
+avoid trapping the program indefinitely on a partial host message.
+
+The Windows libfxlink DLL in CI is compiled with
+`FXLINK_DISABLE_ANSIESC=ON` to avoid colored escape sequences in
+traditional Windows consoles. Update the DLL as well as both Python
+files to benefit from all these changes.
+
+## Official EX-word volumes
+
+The device and host list the eight registered backends in this order:
+`drv0`, `sys0`, `data0`, `data1`, `data2`, `crd0`, `crd1`,
+`crd2`. The native `findfirst` error -1 is interpreted as an empty
+folder in the browser; access restrictions on protected volumes are not
+bypassed.
