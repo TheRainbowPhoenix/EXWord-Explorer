@@ -29,7 +29,8 @@ static const char *leaf(const char *name)
 {
     const char *back = strrchr(name, '\\');
     const char *slash = strrchr(name, '/');
-    const char *p = back > slash ? back : slash;
+    const char *p = back;
+    if(!p || (slash && slash > p)) p = slash;
     return p ? p + 1 : name;
 }
 
