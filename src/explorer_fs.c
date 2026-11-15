@@ -12,6 +12,14 @@
 #define EX_WRITE_ONLY 2
 #define EX_READ_WRITE 3
 
+static int usb_active;
+void ex_fs_usb_mode(int on) { usb_active = on; }
+static int fs_invoke(gint_call_t action)
+{
+    /* Switching worlds restores USB hardware and disconnects the host. */
+    return usb_active ? gint_call(action) : gint_world_switch(action);
+}
+
 int ex_join(char out[EX_PATH_MAX], const char *parent, const char *name)
 {
     if(!parent || !name || !*name ||
@@ -39,6 +47,7 @@ typedef struct {
     ex_entry_t *rows;
     const char *lookfor;
     int found;
+    int known_total;
 } search_t;
 
 static int search_native(search_t *q)
@@ -79,6 +88,8 @@ static int search_native(search_t *q)
         }
         filename[0] = '\0';
         kind = 0;
+        if(q->known_total > 0 && q->rows &&
+            index >= q->first + EX_ROWS) { rc = -16; break; }
         rc = exword_sys_findnext(handle, filename, &kind);
     } while(rc >= 0);
 
@@ -86,20 +97,30 @@ static int search_native(search_t *q)
     q->total = index;
     if(rc != -16) return rc;
     if(close_rc < 0) return close_rc;
-    return index;
+    return q->known_total > 0 && q->rows ? q->known_total : index;
 }
 
 int ex_list(const char *directory, int first, ex_entry_t rows[EX_ROWS])
 {
     search_t q = { .directory = directory, .first = first, .rows = rows };
     if(rows) memset(rows, 0, EX_ROWS * sizeof *rows);
-    return gint_world_switch(GINT_CALL(search_native, (void *)&q));
+    return fs_invoke(GINT_CALL(search_native, (void *)&q));
+}
+
+int ex_list_window(const char *directory, int first, int known_total,
+    ex_entry_t rows[EX_ROWS])
+{
+    if(known_total <= 0) return ex_list(directory, first, rows);
+    search_t q = { .directory = directory, .first = first,
+        .rows = rows, .known_total = known_total };
+    memset(rows, 0, EX_ROWS * sizeof *rows);
+    return fs_invoke(GINT_CALL(search_native, (void *)&q));
 }
 
 int ex_exists_in(const char *directory, const char *name)
 {
     search_t q = { .directory = directory, .lookfor = name };
-    int rc = gint_world_switch(GINT_CALL(search_native, (void *)&q));
+    int rc = fs_invoke(GINT_CALL(search_native, (void *)&q));
     return rc < 0 ? rc : q.found;
 }
 
@@ -139,7 +160,7 @@ int ex_read(const char *path, int offset, uint8_t *data, int max, int *size)
 {
     io_t q = { .path = path, .offset = offset, .limit = max, .bytes = data };
     if(max < 0 || !size) return -1;
-    int rc = gint_world_switch(GINT_CALL(read_native, (void *)&q));
+    int rc = fs_invoke(GINT_CALL(read_native, (void *)&q));
     if(rc >= 0) *size = q.size;
     return rc;
 }
@@ -161,7 +182,7 @@ static int write_native(io_t *q)
 int ex_write_byte(const char *path, int offset, uint8_t byte)
 {
     io_t q = { .path=path, .offset=offset, .bytes=&byte };
-    return gint_world_switch(GINT_CALL(write_native, (void *)&q));
+    return fs_invoke(GINT_CALL(write_native, (void *)&q));
 }
 
 typedef struct {
@@ -176,7 +197,7 @@ static int create_native(op_t *q)
 int ex_create(const char *path, int directory)
 {
     op_t q = { .a = path, .type = directory ? EX_DIRECTORY : EX_FILE };
-    return gint_world_switch(GINT_CALL(create_native, (void *)&q));
+    return fs_invoke(GINT_CALL(create_native, (void *)&q));
 }
 static int delete_native(op_t *q)
 {
@@ -185,7 +206,7 @@ static int delete_native(op_t *q)
 int ex_delete(const char *path)
 {
     op_t q = { .a = path };
-    return gint_world_switch(GINT_CALL(delete_native, (void *)&q));
+    return fs_invoke(GINT_CALL(delete_native, (void *)&q));
 }
 static int rename_native(op_t *q)
 {
@@ -194,7 +215,7 @@ static int rename_native(op_t *q)
 int ex_rename(const char *from, const char *to)
 {
     op_t q = { .a = from, .b = to };
-    return gint_world_switch(GINT_CALL(rename_native, (void *)&q));
+    return fs_invoke(GINT_CALL(rename_native, (void *)&q));
 }
 
 static int copy_native(op_t *q)
@@ -251,5 +272,5 @@ int ex_copy_file(const char *from, const char *to)
 {
     if(!strcmp(from, to)) return -1;
     op_t q = { .a = from, .b = to };
-    return gint_world_switch(GINT_CALL(copy_native, (void *)&q));
+    return fs_invoke(GINT_CALL(copy_native, (void *)&q));
 }
