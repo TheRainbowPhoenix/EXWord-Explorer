@@ -25,15 +25,6 @@ int ex_join(char out[EX_PATH_MAX], const char *parent, const char *name)
     return 0;
 }
 
-static const char *leaf(const char *name)
-{
-    const char *back = strrchr(name, '\\');
-    const char *slash = strrchr(name, '/');
-    const char *p = back;
-    if(!p || (slash && slash > p)) p = slash;
-    return p ? p + 1 : name;
-}
-
 typedef struct {
     const char *directory;
     int first, total;
@@ -63,7 +54,7 @@ static int search_native(search_t *q)
     int index = 0;
     do {
         filename[sizeof filename - 1] = '\0';
-        const char *name = leaf(filename);
+        const char *name = filename; /* Native EX-word find APIs return a basename. */
         if(*name && strcmp(name, ".") && strcmp(name, "..")) {
             if(q->lookfor && !strcmp(name, q->lookfor)) q->found = 1;
             if(q->rows && index >= q->first && index < q->first + EX_ROWS) {
