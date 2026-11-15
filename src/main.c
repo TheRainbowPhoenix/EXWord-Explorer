@@ -200,7 +200,7 @@ static void draw_directory(void)
             dtext(485, y, C_DARK, ">");
     }
     if(app.total > EX_ROWS) {
-        int track = 212;
+        int track = 235;
         int thumb = max_int(9, track*EX_ROWS / app.total);
         int y = 54 + (track-thumb)*app.top / max_int(1,app.total-EX_ROWS);
         box_fill(523, 54, 526, 54+track, C_LIGHT);
