@@ -1,5 +1,6 @@
 """Offline EXFS/1 client and TFTP tests; no USB hardware necessary."""
 import io
+import ctypes as ct
 import os
 import socket
 import struct
@@ -11,6 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from exfs import (Filesystem, RemoteError, remote_path,
+                  FxlinkUSB, FxlinkMessage,
                   CMD_LIST, CMD_READ, CMD_CREATE, CMD_WRITE,
                   CMD_DELETE, CMD_RENAME, CMD_STAT, CMD_PING)
 from bridge import TFTPServer
@@ -86,6 +88,55 @@ class ProtocolTests(unittest.TestCase):
 
     def test_paths(self):
         self.assertEqual(remote_path("/drv0/test.dat"), b"\\\\drv0\\test.dat")
+
+    def test_data0_and_crd0_volumes(self):
+        self.assertEqual(remote_path("/data0"), b"\\\\data0")
+        self.assertEqual(remote_path("/data0/foo.dat"), b"\\\\data0\\foo.dat")
+        self.assertEqual(remote_path("/crd0"), b"\\\\crd0")
+
+    def test_fxlink_receiver_is_not_restarted(self):
+        """libfxlink auto-resubmits IN; calling start_bulk_IN after reply
+        always fails because there is already a pending IN transfer."""
+        class AutoRearmingFxlink:
+            def __init__(self):
+                self.pending = []
+                self.saved = []
+                self.starts = 0
+                self.freed = 0
+            def fxlink_device_send_bulk_OUT(self, ctx, dev, app, typ, buffer, size):
+                self.last_request = ct.string_at(buffer, size)
+                sequence = struct.unpack_from("<I", self.last_request)[0]
+                raw = struct.pack("<IiI", sequence, 0, 0) + b"EXFS/1"
+                payload = ct.create_string_buffer(raw)
+                message = FxlinkMessage()
+                message.size = len(raw)
+                message.application = b"exfs"
+                message.type = b"resp"
+                message.data = ct.cast(payload, ct.c_void_p).value
+                self.saved.append((payload, message))
+                self.pending.append(ct.pointer(message))
+                return True
+            def fxlink_device_finish_bulk_IN(self, dev):
+                return self.pending.pop(0) if self.pending else None
+            def fxlink_message_free(self, message, free_data):
+                self.freed += 1
+            def fxlink_device_start_bulk_IN(self, dev):
+                self.starts += 1
+                return False  # receiver is already active
+
+        usb = FxlinkUSB.__new__(FxlinkUSB)
+        usb.verbose = False
+        usb.dev = object()
+        usb.ctx = object()
+        usb.lock = threading.Lock()
+        usb.sequence = 0
+        usb.fx = AutoRearmingFxlink()
+        usb._events = lambda: None
+        for _ in range(3):
+            self.assertEqual(usb.exchange(CMD_PING, remote_path("/drv0")),
+                             (0, b"EXFS/1"))
+        self.assertEqual(usb.fx.freed, 3)
+        self.assertEqual(usb.fx.starts, 0)
 
     def test_file_roundtrip_and_listing(self):
         fake = FakeTransport()
