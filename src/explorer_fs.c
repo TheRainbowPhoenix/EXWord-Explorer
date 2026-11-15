@@ -14,9 +14,17 @@
 
 int ex_join(char out[EX_PATH_MAX], const char *parent, const char *name)
 {
-    if(!parent || !name || !*name || strchr(name, '\\') || strchr(name, '/')
-       || !strcmp(name, ".") || !strcmp(name, ".."))
-        return -1;
+    if(!parent || !name || !*name ||
+       !strcmp(name, ".") || !strcmp(name, "..")) return -1;
+    /* Native EX-word names may be Shift-JIS. A byte 0x5c can be a
+       *trailing byte* of a multibyte character, not a separator. */
+    for(size_t i=0; name[i]; i++) {
+        unsigned char byte=(unsigned char)name[i];
+        int lead=(byte>=0x81 && byte<=0x9f) ||
+                 (byte>=0xe0 && byte<=0xfc);
+        if(lead && name[i+1]) { i++; continue; }
+        if(byte=='\\' || byte=='/') return -1;
+    }
     size_t n = strlen(parent), m = strlen(name);
     if(n + 1 + m >= EX_PATH_MAX) return -1;
     memcpy(out, parent, n);
