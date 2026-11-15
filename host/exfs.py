@@ -251,8 +251,12 @@ class Filesystem:
     def list(self, directory):
         names = []
         offset = 0
+        total = 0
         while True:
-            total, body = self.command(CMD_LIST, directory, offset=offset)
+            # First page counts the directory; later requests reuse the count.
+            known = total if offset and total <= 65535 else 0
+            total, body = self.command(CMD_LIST, directory,
+                                       offset=offset, length=known)
             pointer = 0
             while pointer < len(body):
                 if pointer+2 > len(body):
