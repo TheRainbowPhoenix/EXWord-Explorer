@@ -37,6 +37,7 @@ static const char *volumes[] = {
 typedef struct {
     int screen, dialog, action, menu_choice;
     int selected, top, total;
+    int volume_selected;
     int parents_selected[32], parents_top[32], depth;
     ex_entry_t rows[EX_ROWS];
     char directory[EX_PATH_MAX];
@@ -129,13 +130,19 @@ static void loading(const char *name)
 }
 static void human_size(int size, char out[8])
 {
-    if(size < 10000) snprintf(out, 8, "%d", size);
-    else if(size < 1024*1024)
-        snprintf(out, 8, "%dk", (size+1023)/1024);
+    if(size < 1024) snprintf(out, 8, "%d", size);
+    else if(size < 10*1024)
+        snprintf(out, 8, "%d.%dk", size/1024, ((size%1024)*10)/1024);
+    else if(size < 1000*1024)
+        snprintf(out, 8, "%dk", size/1024);
     else if(size < 10*1024*1024)
         snprintf(out, 8, "%d.%dM", size/(1024*1024),
             ((size%(1024*1024))*10)/(1024*1024));
-    else snprintf(out, 8, "%dM", size/(1024*1024));
+    else if(size < 1000*1024*1024)
+        snprintf(out, 8, "%dM", size/(1024*1024));
+    else snprintf(out, 8, "%d.%dG",
+            size/(1024*1024*1024),
+            ((size%(1024*1024*1024))*10)/(1024*1024*1024));
 }
 static void footer(const char *hint)
 {
@@ -392,6 +399,7 @@ static void enter_selected(void)
             app.status[0]=0;
             return;
         }
+        app.volume_selected = app.selected;
         snprintf(target, sizeof target, "\\\\%s", volumes[app.selected]);
     }
     else if(current_entry_path(target) < 0) {
@@ -456,7 +464,8 @@ static void go_back(void)
         else {
             app.screen = SCREEN_VOLUMES;
             app.depth = 0;
-            app.selected = app.top = 0;
+            app.selected = app.volume_selected;
+            app.top = 0;
         }
     }
 }
