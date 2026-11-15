@@ -69,6 +69,10 @@ int preview_open(char const *filename, int format)
         rc=casio_bitmap_open(&stream,&bitmap);
         if(rc || bitmap.stride>sizeof scratch.row) return -1;
     }
+    else if(format==PREVIEW_RLE565) {
+        bitmap.width=528;
+        bitmap.height=320;
+    }
     else if(format==PREVIEW_CJF) {
         cjf_stream_t cjfs={read_at,NULL,(uint32_t)size};
         rc=cjf_open(&cjfs,&font);
@@ -120,8 +124,10 @@ void preview_range(int delta)
 int preview_render(void)
 {
     dclear(C_WHITE);
-    if(type==PREVIEW_BITMAP) {
-        int rc=casio_bitmap_render(&stream,&bitmap,scratch.row,sizeof scratch.row,plot565,NULL);
+    if(type==PREVIEW_BITMAP || type==PREVIEW_RLE565) {
+        int rc=type==PREVIEW_BITMAP ?
+            casio_bitmap_render(&stream,&bitmap,scratch.row,sizeof scratch.row,plot565,NULL) :
+            casio_bitmap_render_rle565(&stream,528,320,plot565,NULL);
         if(rc) return rc;
         dupdate();
         return 0;
