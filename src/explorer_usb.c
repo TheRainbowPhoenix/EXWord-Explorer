@@ -103,10 +103,12 @@ static void send_reply(uint32_t id, int status, uint32_t total,
     const uint8_t *body, int body_size)
 {
     if(body_size<0 || body_size>EXFS_DATA_MAX) { status=-2; body_size=0; }
+    /* The reply can be built in-place in ex_shared_io. Shift the payload
+       FIRST so the response header cannot overwrite its first bytes. */
+    if(body_size) memmove(answer+12, body, body_size);
     write32(answer, id);
     write32(answer+4, (uint32_t)status);
     write32(answer+8, total);
-    if(body_size) memcpy(answer+12, body, body_size);
 
     usb_fxlink_header_t h;
     if(!usb_fxlink_fill_header(&h, "exfs", "resp", 12+body_size))
@@ -132,7 +134,9 @@ static int dispatch(uint8_t const *data, int size)
     int path_size=read16(data+10);
     int cmd=data[12], flags=data[13];
     int status=-2, total=0, body_size=0;
-    uint8_t body[EXFS_DATA_MAX];
+    /* Reuse the request workspace as response body to avoid a 2-KiB
+       stack allocation. Necessary with the EX-word's 8-KiB stack. */
+    uint8_t *body=ex_shared_io;
     char path[EX_PATH_MAX], to[EX_PATH_MAX];
 
     if(path_size<=0 || path_size>=EX_PATH_MAX ||
