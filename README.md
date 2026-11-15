@@ -6,7 +6,7 @@ This is an **EX-word .d01 add-in**, not a ClassPad .hh3 add-in.
 
 ## Features
 
-- Browse candidate volumes drv0, drv1, drv2, data0, crd0, crd1, crd2, sys0, sys1, rom0, rom1. Unsupported mounts are safely rejected, or shown as empty if the OS reports the same error as an empty directory.
+- Browse candidate volumes drv0, sys0, data0, data1, data2, crd0, crd1, crd2. Directory enumeration returning -1 is shown as an empty directory; other native errors are reported.
 - Directory browsing includes all enumerated filenames, with no extension or hidden-file filtering.
 - Full-screen list, fixed 20-row window; the app does not cache a whole directory.
 - Hex viewer: 12 bytes per row with address, hex and ASCII; 240-byte pages let you browse huge files with little RAM.
@@ -69,7 +69,7 @@ The workflow ensures that explorer.d01 fits the 128 KiB EX-word loader limit.
 
 ## USB remote filesystem (fxlink + local TFTP)
 
-The volume home screen lists **data0** and **crd0** among the available drives, plus **USB Remote**. This opens a USB
+The volume home screen lists all eight registered drives (**drv0, sys0, data0, data1, data2, crd0, crd1, crd2**), plus **USB Remote**. This opens a USB
 fxlink bulk interface and runs the EXFS/1 filesystem RPC server. The
 companion desktop app (Python 3.10+, libusb and Tkinter) provides a
 graphical file manager, uploads/downloads and a **localhost-only TFTP
@@ -108,3 +108,44 @@ trying to start a second receive transfer incorrectly raises a
 Use `python3 bridge.py --verbose` for USB connection, EXFS request ID,
 reply code and timeout diagnostics (stderr). Re-download the latest
 host artifact or update both `bridge.py` and `exfs.py` before retrying.
+
+## Image and CJF preview
+
+In a directory, select a file, press **Sound**, then choose
+**View bitmap** or **Preview CJF font**. EXE still opens the
+hex viewer for arbitrary files. Bitmaps are rendered on the complete
+528x320 screen (cropped/centered at native resolution); **ESC** returns.
+CJF shows an unlabeled-borderless glyph grid, with hexadecimal glyph
+indexes beneath each image. **Page Up/Down** jumps one grid page,
+**Left/Right** changes CJF range, **ESC** returns to the directory.
+
+The format decoders are portable `src/readers/casio_bitmap.{c,h}`
+and `src/readers/cjf.{c,h}`, with no gint or OS dependency. The
+application-only `src/preview.c` handles native EX-word file reads
+and gint drawing. Both readers use a caller-defined read-at callback,
+so entire files do not need to be loaded into memory. The bitmap reader
+matches the Casio packed BIN formats 0/1/2/3 from the supplied
+`bitmap.py`; it is **not** a decoder for Windows BMP files.
+The CJF reader supports linked ranges, raw glyphs, indexed glyphs,
+and nibble/byte RLE from the supplied `cjf.py`. Unknown CJF
+encodings, oversized glyphs, or unsupported image layouts are rejected
+rather than displayed incorrectly. Standalone native C fixture tests
+run in CI.
+
+## Transfer improvements / stop controls
+
+TFTP itself uses **512-byte DATA blocks** (RFC 1350) and remains
+compatible with ordinary TFTP clients. USB EXFS requests now batch up
+to **2048 bytes**, with the host buffering multiple TFTP blocks from
+one USB request. Host downloads and uploads stream to disk instead of
+buffering whole files. The desktop GUI shows byte progress and has a
+**Cancel** button; cancellation takes effect after the in-flight USB
+chunk finishes and incomplete uploads are cleaned up where possible.
+On-device USB Remote shows a tappable **STOP USB** control; ESC,
+AC/ON, and the Sound/Audio key can also disconnect. A bounded USB
+read timeout prevents permanently blocking on an incomplete message.
+
+The Windows fxlink DLL is now built without terminal ANSI escape sequences.
+Actual transfer speed and reliable stop/disconnect behavior still require
+on-device tests; 2048 bytes is a design compromise for limited EX-word RAM,
+not a measured optimum.
