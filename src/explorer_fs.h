@@ -6,7 +6,7 @@
 /* Keep directory listings bounded: the EX-word loader has little RAM. */
 #define EX_NAME_MAX 160
 #define EX_PATH_MAX 320
-#define EX_ROWS 18
+#define EX_ROWS 20
 
 typedef struct {
     char name[EX_NAME_MAX];
