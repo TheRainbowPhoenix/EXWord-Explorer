@@ -119,3 +119,57 @@ jobs:
             build-exword/explorer.map
           if-no-files-found: warn
           retention-days: 14
+
+  host-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install MinGW toolchain and libusb
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            git
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-pkg-config
+            mingw-w64-x86_64-libusb
+            mingw-w64-x86_64-libpng
+            mingw-w64-x86_64-ncurses
+
+      - name: Build Windows libfxlink DLL
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          git clone --depth=1 --branch fix/exword-data-load-alignment \
+            https://github.com/TheRainbowPhoenix/fxsdk-exword.git fxsdk-src
+          sed -i 's/add_library(libfxlink STATIC/add_library(libfxlink/' fxsdk-src/CMakeLists.txt
+          cmake -S fxsdk-src -B fxsdk-win-build -G Ninja \
+            -DBUILD_SHARED_LIBS=ON \
+            -DFXLINK_DISABLE_SDL2=ON -DFXLINK_DISABLE_UDISKS2=ON
+          cmake --build fxsdk-win-build --target libfxlink --parallel 2
+          mkdir -p host-dist
+          cp fxsdk-win-build/libfxlink.dll host-dist/
+          cp /mingw64/bin/libusb-1.0.dll host-dist/
+          for dll in libgcc_s_seh-1.dll libwinpthread-1.dll; do
+            if test -f "/mingw64/bin/$dll"; then
+              cp "/mingw64/bin/$dll" host-dist/
+            fi
+          done
+          cp host/bridge.py host/exfs.py host-dist/
+          test -s host-dist/libfxlink.dll
+
+      - name: Upload Windows USB/TFTP host bridge
+        uses: actions/upload-artifact@v4
+        with:
+          name: EXWord-Explorer-host-windows
+          path: host-dist/
+          if-no-files-found: error
+          retention-days: 14
