@@ -69,7 +69,8 @@ static void font_fixture(void)
     mem_t m={data,sizeof data};
     casio_stream_t source={read_mem,&m,sizeof data};
     cjf_font_t font;
-    assert(cjf_open(&source,&font)==0);
+    cjf_stream_t cjfs={read_mem,&m,sizeof data};
+    assert(cjf_open(&cjfs,&font)==0);
     assert(font.nominal_size==8);
     assert(font.range_count==1 && font.ranges[0].count==3);
     uint8_t glyph[1];
@@ -79,7 +80,7 @@ static void font_fixture(void)
     }
     assert(cjf_read_glyph(&font,0,3,glyph,sizeof glyph)<0);
     be32(data+0x14,0x10); /* cyclic linked list */
-    assert(cjf_open(&source,&font)<0);
+    assert(cjf_open(&cjfs,&font)<0);
 }
 int main(void)
 {
