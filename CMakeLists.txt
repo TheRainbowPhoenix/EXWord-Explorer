@@ -14,6 +14,9 @@ add_executable(explorer
   src/main.c
   src/explorer_fs.c
   src/explorer_usb.c
+  src/preview.c
+  src/readers/casio_bitmap.c
+  src/readers/cjf.c
 )
 target_compile_options(explorer PRIVATE
   -Wall -Wextra -Os -flto=auto -fno-pic -fno-pie
