@@ -47,8 +47,9 @@ static int search_native(search_t *q)
     unsigned long kind = 0;
     int handle = -1, rc = exword_sys_findfirst(pattern, &handle, filename, &kind);
     if(rc < 0) {
-        /* The native API also uses -1 for an empty directory. */
-        return (rc == -1 || rc == -16) ? 0 : rc;
+        /* The native enumerator reports end/no matches as -16.
+         * Other negative values indicate an inaccessible path/device. */
+        return rc == -16 ? 0 : rc;
     }
 
     int index = 0;
@@ -75,7 +76,7 @@ static int search_native(search_t *q)
 
     int close_rc = exword_sys_findclose(handle);
     q->total = index;
-    if(rc != -16 && rc != -1) return rc;
+    if(rc != -16) return rc;
     if(close_rc < 0) return close_rc;
     return index;
 }
