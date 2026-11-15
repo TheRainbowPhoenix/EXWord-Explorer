@@ -101,6 +101,13 @@ int main(void)
     m.data=bad;m.length=sizeof bad;
     source.size=m.length;
     assert(casio_bitmap_open(&source,&bmp)<0);
+    static const uint8_t rle[]={0x02,0xf8,0x00,0x01,0x07,0xe0};
+    mem_t rm={rle,sizeof rle};
+    casio_stream_t rs={read_mem,&rm,sizeof rle};
+    output_t out={{0},0};
+    assert(casio_bitmap_render_rle565(&rs,3,1,plot,&out)==0);
+    assert(out.count==3 && out.pixels[0]==0xf800 &&
+           out.pixels[1]==0xf800 && out.pixels[2]==0x07e0);
     font_fixture();
     puts("All standalone Casio bitmap/CJF parser tests passed");
     return 0;
