@@ -64,15 +64,18 @@ static void screen(const char *detail, int count)
 static int valid_path(char const *path)
 {
     if(path[0] != '\\' || path[1] != '\\') return 0;
-    const char *vols[] = { "drv0", "drv1", "drv2", "crd0", "crd1",
-        "crd2", "sys0", "sys1", "rom0", "rom1" };
-    int allowed=0;
+    const char *vols[] = { "drv0", "drv1", "drv2", "data0",
+        "crd0", "crd1", "crd2", "sys0", "sys1", "rom0", "rom1" };
+    const char *component=NULL;
     for(unsigned i=0; i<sizeof vols/sizeof vols[0]; i++) {
-        if(!strncmp(path+2, vols[i], 4) &&
-            (path[6]==0 || path[6]=='\\')) allowed=1;
+        size_t n=strlen(vols[i]);
+        if(!strncmp(path+2, vols[i], n) &&
+            (path[2+n]==0 || path[2+n]=='\\')) {
+            component=path+2+n;
+            break;
+        }
     }
-    if(!allowed) return 0;
-    const char *component=path+6;
+    if(!component) return 0;
     if(*component=='\\') component++;
     if(!*component) return 1;
     for(const char *p=component;;p++) {
