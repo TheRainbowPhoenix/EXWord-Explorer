@@ -1,32 +1,94 @@
-name: Build (fx-cp)
+name: Build (EX-word)
 
 on:
   push:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
-
-    # Run all steps inside your GHCR image
     container:
       image: ghcr.io/therainbowphoenix/gint-docker:main
-
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
 
-      - name: Build (fxsdk build-cp)
+      - name: Install EX-word fxSDK and converter
+        shell: bash
         run: |
-          fxsdk build-cp
+          set -euo pipefail
+          git clone --depth=1 --branch fix/exword-data-load-alignment \
+            https://github.com/TheRainbowPhoenix/fxsdk-exword.git /tmp/fxsdk-src
+          cmake -S /tmp/fxsdk-src -B /tmp/fxsdk-build \
+            -DCMAKE_INSTALL_PREFIX=/tmp/fxsdk-exword \
+            -DFXLINK_DISABLE_SDL2=ON -DFXLINK_DISABLE_UDISKS2=ON
+          cmake --build /tmp/fxsdk-build --parallel 2
+          cmake --install /tmp/fxsdk-build
+          git clone --depth=1 https://github.com/brijohn/elf2d01.git /tmp/elf2d01
+          cc -O2 /tmp/elf2d01/elf2d01.c -o /tmp/fxsdk-exword/bin/elf2d01
+          echo /tmp/fxsdk-exword/bin >> "$GITHUB_PATH"
 
-      - name: Upload MyAddin.hh3
+      - name: Build EX-word gint kernel
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth=1 --branch feature/exword-runtime-bridge \
+            https://github.com/TheRainbowPhoenix/gint-exword.git /tmp/gint-src
+          cmake -S /tmp/gint-src -B /tmp/gint-build \
+            -DCMAKE_TOOLCHAIN_FILE=/tmp/fxsdk-exword/lib/cmake/fxsdk/EXWORD.cmake \
+            -DCMAKE_INSTALL_PREFIX=/tmp/gint-exword \
+            -DCMAKE_MODULE_PATH=/tmp/fxsdk-exword/lib/cmake/fxsdk
+          cmake --build /tmp/gint-build --parallel 2
+          cmake --install /tmp/gint-build
+
+      - name: Build explorer and packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth=1 --branch main \
+            https://github.com/TheRainbowPhoenix/exword-xd-a8500-TEST.git /tmp/exword-metadata
+          cmake -S . -B build-exword \
+            -DCMAKE_TOOLCHAIN_FILE=/tmp/fxsdk-exword/lib/cmake/fxsdk/EXWORD.cmake \
+            -DCMAKE_PREFIX_PATH=/tmp/gint-exword \
+            '-DCMAKE_MODULE_PATH=/tmp/gint-exword/lib/cmake/fxsdk;/tmp/fxsdk-exword/lib/cmake/fxsdk' \
+            -DEXWORD_METADATA_SOURCE=/tmp/exword-metadata
+          cmake --build build-exword --parallel 2
+          test -s build-exword/explorer.d01
+          test "$(stat -c %s build-exword/explorer.d01)" -le 131072
+          for locale in ja cn; do
+            package="build-exword/packages/${locale}/EXPLR"
+            test -s "$package/explorer.d01"
+            test -s "$package/diction.htm"
+            test -f "$package/fileinfo.cji"
+          done
+
+      - name: Upload Japanese EX-word installation folder
         uses: actions/upload-artifact@v4
         with:
-          name: MyAddin.hh3
-          path: MyAddin.hh3
+          name: EXWord-Explorer-ja
+          path: build-exword/packages/ja/
           if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Chinese EX-word installation folder
+        uses: actions/upload-artifact@v4
+        with:
+          name: EXWord-Explorer-cn
+          path: build-exword/packages/cn/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload debugging ELF and map
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: EXWord-Explorer-debug
+          path: |
+            build-exword/explorer
+            build-exword/explorer.map
+          if-no-files-found: warn
           retention-days: 14
