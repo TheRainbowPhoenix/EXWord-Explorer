@@ -203,7 +203,7 @@ void ex_usb_remote_screen(void)
 {
     screen("Starting USB...", 0);
     int rc=usb_open(usb_interfaces, GINT_CALL_NULL);
-    if(rc<0) {
+    if(rc!=0) {
         char msg[80];
         snprintf(msg, sizeof msg, "USB open failed: %d", rc);
         screen(msg, 0);
