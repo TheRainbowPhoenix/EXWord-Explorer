@@ -79,3 +79,25 @@ int casio_bitmap_render(casio_stream_t const *file,
     }
     return 0;
 }
+
+/* Some EX-word factory images have no dimensions/header. Each 3-byte run
+ * encodes (u8 count, big-endian RGB565), as in bitmap.py's decode_rle565(). */
+int casio_bitmap_render_rle565(casio_stream_t const *file,
+    uint16_t width, uint16_t height, casio_plot565 plot, void *user)
+{
+    if(!width || !height || !plot ||
+       (uint32_t)width*height>16777216u) return -1;
+    uint32_t total=(uint32_t)width*height, cursor=0, offset=0;
+    while(cursor<total) {
+        uint8_t triplet[3];
+        int rc=read_bytes(file,offset,triplet,3);
+        if(rc) return rc;
+        offset+=3;
+        unsigned count=triplet[0];
+        uint16_t color=be16(triplet+1);
+        if(!count || count>total-cursor) return -1;
+        for(unsigned i=0;i<count;i++,cursor++)
+            plot(user,cursor%width,cursor/width,color);
+    }
+    return 0;
+}
