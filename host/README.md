@@ -15,8 +15,11 @@ translating TFTP requests to USB filesystem operations.
 
 Host artifact includes bridge.py, exfs.py and the compiled libfxlink.so.
 You need Python 3.10+, libusb-1.0 and Tkinter for the GUI. On Linux you
-might need udev permissions. On Windows use compatible libfxlink.dll and
-libusb-1.0.dll from USB_test beside the scripts, or pass --libfxlink.
+might need udev permissions. For Windows, download the EXWord-Explorer-host-windows artifact from the
+same CI run. It includes libfxlink.dll, libusb-1.0.dll and the Python
+scripts; place them together and run python bridge.py. If DLL loading
+fails, make sure a compatible 64-bit Python interpreter and required
+UCRT libraries are available, or supply --libfxlink explicitly.
 
 Options:
 - --no-gui: TFTP server without the desktop interface.
