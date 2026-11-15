@@ -289,7 +289,7 @@ class Filesystem:
         self.command(CMD_DELETE, path)
 
     def rename(self, old, new):
-        target = remote_path(new)
+        target = new if isinstance(new, bytes) else remote_path(new)
         if len(target) > MAX_CHUNK:
             raise ValueError("Destination path too large")
         self.command(CMD_RENAME, old, length=len(target), data=target)
