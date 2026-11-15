@@ -155,7 +155,8 @@ jobs:
           sed -i 's/add_library(libfxlink STATIC/add_library(libfxlink/' fxsdk-src/CMakeLists.txt
           cmake -S fxsdk-src -B fxsdk-win-build -G Ninja \
             -DBUILD_SHARED_LIBS=ON \
-            -DFXLINK_DISABLE_SDL2=ON -DFXLINK_DISABLE_UDISKS2=ON
+            -DFXLINK_DISABLE_SDL2=ON -DFXLINK_DISABLE_UDISKS2=ON \
+            -DFXLINK_DISABLE_POLL=ON
           cmake --build fxsdk-win-build --target libfxlink --parallel 2
           mkdir -p host-dist
           cp fxsdk-win-build/libfxlink.dll host-dist/
