@@ -27,7 +27,7 @@ enum { SCREEN_VOLUMES, SCREEN_DIRECTORY, SCREEN_HEX, SCREEN_IMAGE, SCREEN_FONT }
 enum { DIALOG_NONE, DIALOG_MENU, DIALOG_NAME, DIALOG_CONFIRM };
 enum { ACT_DELETE, ACT_RENAME, ACT_NEW_FILE, ACT_NEW_FOLDER,
        ACT_COPY, ACT_CUT, ACT_PASTE, ACT_PREVIEW_BITMAP,
-       ACT_PREVIEW_CJF, ACT_EDIT };
+       ACT_PREVIEW_CJF, ACT_PREVIEW_RLE565, ACT_EDIT };
 static const char *volumes[] = {
     "drv0", "sys0", "data0", "data1", "data2",
     "crd0", "crd1", "crd2"
@@ -57,9 +57,10 @@ static app_t app;
 
 static const char *actions[] = {
     "Delete", "Rename", "Create file", "Create folder",
-    "Copy", "Cut", "Paste", "View bitmap", "Preview CJF font"
+    "Copy", "Cut", "Paste", "View bitmap", "Preview CJF font",
+    "View RLE565 (528x320)"
 };
-#define ACTION_COUNT 9
+#define ACTION_COUNT 10
 
 static int min_int(int a, int b) { return a < b ? a : b; }
 static int max_int(int a, int b) { return a > b ? a : b; }
@@ -287,7 +288,8 @@ static int menu_allowed(int option)
     int valid = has && !app.rows[app.selected-app.top].truncated;
     if(option == ACT_DELETE || option == ACT_RENAME) return valid;
     if(option == ACT_COPY || option == ACT_CUT ||
-       option == ACT_PREVIEW_BITMAP || option == ACT_PREVIEW_CJF) return is_file;
+       option == ACT_PREVIEW_BITMAP || option == ACT_PREVIEW_CJF ||
+       option == ACT_PREVIEW_RLE565) return is_file;
     if(option == ACT_PASTE) return app.clipboard_valid;
     return 1;
 }
@@ -300,7 +302,7 @@ static void draw_dialog(void)
     if(app.dialog == DIALOG_MENU) {
         dtext(48, 78, C_BLACK, "FILE OPERATIONS");
         for(int i=0; i<ACTION_COUNT; i++) {
-            int y = 103+i*17;
+            int y = 95+i*16;
             if(i == app.menu_choice)
                 box_fill(40, y-3, 486, y+13, C_LIGHT);
             dtext(52, y, menu_allowed(i) ? C_BLACK : C_DARK, actions[i]);
@@ -575,12 +577,14 @@ static void invoke_action(int action)
     if(current_entry_path(app.source) < 0) {
         status_message("Cannot select that entry"); return;
     }
-    if(action == ACT_PREVIEW_BITMAP || action == ACT_PREVIEW_CJF) {
-        int type=action==ACT_PREVIEW_BITMAP ? PREVIEW_BITMAP : PREVIEW_CJF;
+    if(action == ACT_PREVIEW_BITMAP || action == ACT_PREVIEW_CJF ||
+       action == ACT_PREVIEW_RLE565) {
+        int type=action==ACT_PREVIEW_BITMAP ? PREVIEW_BITMAP :
+            action==ACT_PREVIEW_CJF ? PREVIEW_CJF : PREVIEW_RLE565;
         loading(app.source);
         int rc=preview_open(app.source,type);
         if(rc<0) { status_rc("Unsupported preview", rc); return; }
-        app.screen=type==PREVIEW_BITMAP ? SCREEN_IMAGE : SCREEN_FONT;
+        app.screen=type==PREVIEW_CJF ? SCREEN_FONT : SCREEN_IMAGE;
         return;
     }
     if(action == ACT_RENAME) { start_name(ACT_RENAME); return; }
