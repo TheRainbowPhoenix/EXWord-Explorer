@@ -251,9 +251,17 @@ void ex_usb_remote_screen(void)
         }
         /* A stalled or unplugged host must not trap the app forever inside
            the synchronous payload read. Return to key/touch polling. */
-        timeout_t deadline = timeout_make_ms(300);
-        int got=usb_read_sync_timeout(usb_ff_bulk_input(), request,
-            h.size, false, &deadline);
+        int got=0;
+        /* fxlink bulk transfer_size is 2048: a request with 2048 data
+           plus its EXFS path/header spans *multiple* USB transactions.
+           The gint sync reader never reads across transaction borders. */
+        while(got<(int)h.size) {
+            timeout_t deadline=timeout_make_ms(600);
+            int n=usb_read_sync_timeout(usb_ff_bulk_input(),
+                request+got, (int)h.size-got, false, &deadline);
+            if(n<=0) break;
+            got+=n;
+        }
         if(got!=(int)h.size) {
             usb_fxlink_drop_transaction();
             continue;
