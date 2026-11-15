@@ -67,7 +67,7 @@ by response bytes. status < 0 indicates a native filesystem error.
 total is directory entry count for LIST, file size for STAT/READ.
 LIST entries are [u8 is_directory, u8 name_length, name_bytes...].
 Messages are limited to 1024 bytes; file chunks <=512 bytes. Native
-paths must start with a valid volume (drv0/crd0/sys0/etc).
+paths must start with a valid volume (drv0/data0/crd0/sys0/etc).
 
 ## Security and hardware limitations
 
@@ -84,3 +84,21 @@ browsing and downloads before testing uploads.
 No firmware protections are bypassed. Hidden objects not returned by
 native EX-word enumeration remain inaccessible. TFTP uses 512-byte
 blocks and 16-bit block numbers; it is intended for normal sized files.
+
+## Troubleshooting / verbose output
+
+Run `python3 bridge.py --verbose` (or `-v`) to print the active
+libfxlink/libusb library, USB discovery and claim stages, request IDs,
+commands, native paths, sizes, response status values, ignored packets,
+and request timeouts. Verbose output goes to stderr; it does not dump
+file contents.
+
+**Fixed:** The original host code called
+`fxlink_device_start_bulk_IN()` after every response, even though
+libfxlink's receive callback already resubmits its bulk-IN transfer.
+This triggered `Could not restart fxlink receiver` immediately after
+a successful 18-byte `exfs:resp` ping. The receiver is now started
+once at connection and remains active automatically. You only need
+to update the **host Python scripts** for this fix; the device firmware
+is unchanged for the receive-lifecycle issue. To browse `data0`,
+update both host scripts and the EX-word package.
