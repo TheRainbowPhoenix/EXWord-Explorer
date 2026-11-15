@@ -7,6 +7,7 @@
  */
 #include "explorer_fs.h"
 #include "explorer_usb.h"
+#include "preview.h"
 #include <gint/config.h>
 #include <gint/display.h>
 #include <gint/keyboard.h>
@@ -22,10 +23,11 @@
 #endif
 
 enum { PAGE_LINES = EX_ROWS, HEX_COLS = 12, HEX_PAGE = HEX_COLS * PAGE_LINES };
-enum { SCREEN_VOLUMES, SCREEN_DIRECTORY, SCREEN_HEX };
+enum { SCREEN_VOLUMES, SCREEN_DIRECTORY, SCREEN_HEX, SCREEN_IMAGE, SCREEN_FONT };
 enum { DIALOG_NONE, DIALOG_MENU, DIALOG_NAME, DIALOG_CONFIRM };
 enum { ACT_DELETE, ACT_RENAME, ACT_NEW_FILE, ACT_NEW_FOLDER,
-       ACT_COPY, ACT_CUT, ACT_PASTE, ACT_EDIT };
+       ACT_COPY, ACT_CUT, ACT_PASTE, ACT_PREVIEW_BITMAP,
+       ACT_PREVIEW_CJF, ACT_EDIT };
 static const char *volumes[] = {
     "drv0", "sys0", "data0", "data1", "data2",
     "crd0", "crd1", "crd2"
@@ -55,9 +57,9 @@ static app_t app;
 
 static const char *actions[] = {
     "Delete", "Rename", "Create file", "Create folder",
-    "Copy", "Cut", "Paste"
+    "Copy", "Cut", "Paste", "View bitmap", "Preview CJF font"
 };
-#define ACTION_COUNT 7
+#define ACTION_COUNT 9
 
 static int min_int(int a, int b) { return a < b ? a : b; }
 static int max_int(int a, int b) { return a > b ? a : b; }
@@ -284,7 +286,8 @@ static int menu_allowed(int option)
         !app.rows[app.selected-app.top].truncated;
     int valid = has && !app.rows[app.selected-app.top].truncated;
     if(option == ACT_DELETE || option == ACT_RENAME) return valid;
-    if(option == ACT_COPY || option == ACT_CUT) return is_file;
+    if(option == ACT_COPY || option == ACT_CUT ||
+       option == ACT_PREVIEW_BITMAP || option == ACT_PREVIEW_CJF) return is_file;
     if(option == ACT_PASTE) return app.clipboard_valid;
     return 1;
 }
@@ -297,9 +300,9 @@ static void draw_dialog(void)
     if(app.dialog == DIALOG_MENU) {
         dtext(48, 78, C_BLACK, "FILE OPERATIONS");
         for(int i=0; i<ACTION_COUNT; i++) {
-            int y = 105+i*21;
+            int y = 103+i*17;
             if(i == app.menu_choice)
-                box_fill(40, y-3, 486, y+15, C_LIGHT);
+                box_fill(40, y-3, 486, y+13, C_LIGHT);
             dtext(52, y, menu_allowed(i) ? C_BLACK : C_DARK, actions[i]);
         }
         dtext(48, 251, C_DARK, "EXE select     ESC close");
@@ -334,6 +337,10 @@ static void draw_dialog(void)
 }
 static void redraw(void)
 {
+    if(app.screen == SCREEN_IMAGE || app.screen == SCREEN_FONT) {
+        if(preview_render()<0) status_message("Preview rendering failed");
+        return;
+    }
     dclear(C_WHITE);
     if(app.screen == SCREEN_VOLUMES) draw_volumes();
     if(app.screen == SCREEN_DIRECTORY) draw_directory();
@@ -449,7 +456,8 @@ static void enter_selected(void)
 static void go_back(void)
 {
     app.status[0] = 0;
-    if(app.screen == SCREEN_HEX) {
+    if(app.screen == SCREEN_HEX || app.screen == SCREEN_IMAGE ||
+       app.screen == SCREEN_FONT) {
         app.screen = SCREEN_DIRECTORY;
         app.editing = 0;
         reload_directory();
@@ -566,6 +574,14 @@ static void invoke_action(int action)
     if(action == ACT_PASTE) { paste_clipboard(); return; }
     if(current_entry_path(app.source) < 0) {
         status_message("Cannot select that entry"); return;
+    }
+    if(action == ACT_PREVIEW_BITMAP || action == ACT_PREVIEW_CJF) {
+        int type=action==ACT_PREVIEW_BITMAP ? PREVIEW_BITMAP : PREVIEW_CJF;
+        loading(app.source);
+        int rc=preview_open(app.source,type);
+        if(rc<0) { status_rc("Unsupported preview", rc); return; }
+        app.screen=type==PREVIEW_BITMAP ? SCREEN_IMAGE : SCREEN_FONT;
+        return;
     }
     if(action == ACT_RENAME) { start_name(ACT_RENAME); return; }
     if(action == ACT_DELETE) {
@@ -715,6 +731,16 @@ static void handle_key(key_event_t ev)
         return;
     }
     if(app.screen==SCREEN_HEX) { hex_key(ev); return; }
+    if(app.screen==SCREEN_IMAGE || app.screen==SCREEN_FONT) {
+        if(ev.key==KEY_EXIT) go_back();
+        else if(app.screen==SCREEN_FONT) {
+            if(ev.key==KEY_PAGEUP || ev.key==KEY_UP) preview_page(-1);
+            if(ev.key==KEY_PAGEDOWN || ev.key==KEY_DOWN) preview_page(1);
+            if(ev.key==KEY_LEFT) preview_range(-1);
+            if(ev.key==KEY_RIGHT) preview_range(1);
+        }
+        return;
+    }
     if(ev.key==KEY_EXIT) {
         if(app.screen==SCREEN_VOLUMES) app.screen=-1;
         else go_back();
