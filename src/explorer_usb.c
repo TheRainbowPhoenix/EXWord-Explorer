@@ -114,9 +114,14 @@ static void send_reply(uint32_t id, int status, uint32_t total,
         return;
     int pipe=usb_ff_bulk_output();
     if(pipe<0) return;
-    usb_write_sync(pipe, &h, sizeof h, false);
-    usb_write_sync(pipe, answer, 12+body_size, false);
-    usb_commit_sync(pipe);
+    /* Never block indefinitely on a host which stopped accepting data. */
+    timeout_t deadline=timeout_make_ms(1000);
+    if(usb_write_sync_timeout(pipe,&h,sizeof h,false,&deadline)<0) return;
+    deadline=timeout_make_ms(1000);
+    if(usb_write_sync_timeout(pipe,answer,12+body_size,false,&deadline)<0)
+        return;
+    deadline=timeout_make_ms(1000);
+    usb_commit_sync_timeout(pipe,&deadline);
 }
 
 static int dispatch(uint8_t const *data, int size)
