@@ -23,6 +23,10 @@ VOLUMES = ("drv0", "sys0", "data0", "data1", "data2",
            "crd0", "crd1", "crd2")
 
 
+class CancelledTransfer(Exception):
+    """A user-requested stop between filesystem chunks."""
+
+
 class RemoteError(OSError):
     def __init__(self, status: int):
         super().__init__(f"EX-word filesystem error {status}")
@@ -276,11 +280,15 @@ class Filesystem:
                                      min(length, MAX_CHUNK))
         return size, content
 
-    def download(self, path, target, progress=None):
+    def download(self, path, target, progress=None, cancelled=None):
         total = self.stat(path)
         count = 0
+        if progress:
+            progress(0, total)
         while count < total:
-            _, chunk = self.read(path, count)
+            if cancelled and cancelled():
+                raise CancelledTransfer("Download cancelled")
+            _, chunk = self.read(path, count, min(MAX_CHUNK, total-count))
             if not chunk:
                 raise IOError("Unexpected EOF during USB download")
             target.write(chunk)
@@ -289,12 +297,18 @@ class Filesystem:
                 progress(count, total)
         return count
 
-    def upload(self, path, source, progress=None):
+    def upload(self, path, source, progress=None, cancelled=None, size=None):
         # No overwriting. To replace a file, explicitly delete it first.
+        if cancelled and cancelled():
+            raise CancelledTransfer("Upload cancelled")
         self.command(CMD_CREATE, path)
         done = 0
+        if progress:
+            progress(0, size)
         try:
             while True:
+                if cancelled and cancelled():
+                    raise CancelledTransfer("Upload cancelled")
                 chunk = source.read(MAX_CHUNK)
                 if not chunk:
                     break
@@ -302,7 +316,7 @@ class Filesystem:
                              length=len(chunk), data=chunk)
                 done += len(chunk)
                 if progress:
-                    progress(done, None)
+                    progress(done, size)
         except Exception:
             try:
                 self.remove(path)
