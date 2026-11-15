@@ -17,6 +17,11 @@ typedef struct {
 /* Paths use the native EX-word spelling, eg "\\drv0\CASIO". */
 int ex_join(char out[EX_PATH_MAX], const char *parent, const char *name);
 int ex_list(const char *dir, int first, ex_entry_t rows[EX_ROWS]);
+/* Use a known count to stop enumeration after the visible window. */
+int ex_list_window(const char *dir, int first, int known_total,
+    ex_entry_t rows[EX_ROWS]);
+void ex_fs_usb_mode(int on);
+int ex_remote_write(const char *path, int offset, const uint8_t *data, int length);
 int ex_read(const char *path, int offset, uint8_t *data, int max,
     int *size);
 int ex_write_byte(const char *path, int offset, uint8_t byte);
