@@ -27,10 +27,8 @@ enum { DIALOG_NONE, DIALOG_MENU, DIALOG_NAME, DIALOG_CONFIRM };
 enum { ACT_DELETE, ACT_RENAME, ACT_NEW_FILE, ACT_NEW_FOLDER,
        ACT_COPY, ACT_CUT, ACT_PASTE, ACT_EDIT };
 static const char *volumes[] = {
-    "drv0", "drv1", "drv2", "data0",
-    "crd0", "crd1", "crd2",
-    "sys0", "sys1",
-    "rom0", "rom1"
+    "drv0", "sys0", "data0", "data1", "data2",
+    "crd0", "crd1", "crd2"
 };
 #define VOLUME_COUNT ((int)(sizeof volumes / sizeof volumes[0]))
 
@@ -176,7 +174,7 @@ static void draw_directory(void)
     char label[100];
     header(app.directory, "");
     dtext(10, 34, C_DARK, "TYPE");
-    dtext(64, 34, C_DARK, "NAME (hidden included)");
+    dtext(64, 34, C_DARK, "NAME");
     snprintf(label, sizeof label, "%d item%s", app.total,
         app.total == 1 ? "" : "s");
     dtext(422, 34, C_DARK, label);
@@ -348,6 +346,11 @@ static void reload_directory(void)
     loading(app.directory);
     int old_top = app.top;
     int rc = ex_list(app.directory, app.top, app.rows);
+    if(rc == -1) {
+        app.total=0;
+        status_message("Empty directory");
+        return;
+    }
     if(rc < 0) {
         app.total = 0;
         status_rc("List", rc);
@@ -427,7 +430,8 @@ static void enter_selected(void)
     ex_entry_t temp[EX_ROWS];
     loading(target);
     int rc = ex_list(target, 0, temp);
-    if(rc < 0) { status_rc("Open directory", rc); return; }
+    if(rc < 0 && rc != -1) { status_rc("Open directory", rc); return; }
+    if(rc == -1) rc = 0;
     if(app.screen == SCREEN_DIRECTORY && app.depth < 32) {
         app.parents_selected[app.depth] = app.selected;
         app.parents_top[app.depth] = app.top;
@@ -439,7 +443,8 @@ static void enter_selected(void)
     app.selected = app.top = 0;
     app.total = rc;
     memcpy(app.rows, temp, sizeof temp);
-    app.status[0] = 0;
+    if(rc == 0) status_message("Empty directory");
+    else app.status[0] = 0;
 }
 static void go_back(void)
 {
