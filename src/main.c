@@ -27,7 +27,7 @@ enum { DIALOG_NONE, DIALOG_MENU, DIALOG_NAME, DIALOG_CONFIRM };
 enum { ACT_DELETE, ACT_RENAME, ACT_NEW_FILE, ACT_NEW_FOLDER,
        ACT_COPY, ACT_CUT, ACT_PASTE, ACT_EDIT };
 static const char *volumes[] = {
-    "drv0", "drv1", "drv2",
+    "drv0", "drv1", "drv2", "data0",
     "crd0", "crd1", "crd2",
     "sys0", "sys1",
     "rom0", "rom1"
@@ -161,8 +161,8 @@ static void draw_volumes(void)
     char label[48];
     header("EXWord Explorer /", "");
     for(int i=0; i<=VOLUME_COUNT; i++) {
-        int y = 47 + i * 21;
-        if(i == app.selected) box_fill(3, y-2, 523, y+18, C_RGB(23, 29, 31));
+        int y = 44 + i * 19;
+        if(i == app.selected) box_fill(3, y-2, 523, y+17, C_RGB(23, 29, 31));
         if(i==VOLUME_COUNT) snprintf(label, sizeof label, "[USB]  Remote filesystem");
         else snprintf(label, sizeof label, "[DISK]  %s", volumes[i]);
         dtext(12, y+3, C_BLACK, label);
@@ -746,8 +746,8 @@ int main(void)
                 }
             }
             else if(app.dialog==DIALOG_NONE && app.screen==SCREEN_VOLUMES &&
-                ev.y>=45 && ev.y<45+(VOLUME_COUNT+1)*21) {
-                int index=(ev.y-45)/21;
+                ev.y>=42 && ev.y<42+(VOLUME_COUNT+1)*19) {
+                int index=(ev.y-42)/19;
                 if(index<=VOLUME_COUNT) {
                     if(index==app.selected) enter_selected();
                     else choose_line(index);
