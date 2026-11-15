@@ -18,7 +18,7 @@ REQUEST = struct.Struct("<IIHHBB")
 RESPONSE = struct.Struct("<IiI")
 CMD_LIST, CMD_READ, CMD_CREATE, CMD_WRITE, CMD_DELETE, CMD_RENAME, CMD_STAT, CMD_PING = range(1, 9)
 MAX_CHUNK = 512
-VOLUMES = frozenset(("drv0", "drv1", "drv2", "crd0", "crd1",
+VOLUMES = frozenset(("drv0", "drv1", "drv2", "data0", "crd0", "crd1",
                      "crd2", "sys0", "sys1", "rom0", "rom1"))
 
 
@@ -173,9 +173,10 @@ class FxlinkUSB:
                     application = bytes(msg.application).rstrip(b"\x00")
                     typ = bytes(msg.type).rstrip(b"\x00")
                 finally:
+                    # libfxlink's bulk_IN_callback automatically resubmits
+                    # the active transfer. A second start here always fails:
+                    # the receiver is already running.
                     self.fx.fxlink_message_free(msg_ptr, True)
-                    if not self.fx.fxlink_device_start_bulk_IN(self.dev):
-                        raise ConnectionError("Could not restart fxlink receiver")
                 if application != b"exfs" or typ != b"resp" or len(raw) < 12:
                     continue
                 number, status, total = RESPONSE.unpack_from(raw)
