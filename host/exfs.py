@@ -18,7 +18,7 @@ from pathlib import Path
 REQUEST = struct.Struct("<IIHHBB")
 RESPONSE = struct.Struct("<IiI")
 CMD_LIST, CMD_READ, CMD_CREATE, CMD_WRITE, CMD_DELETE, CMD_RENAME, CMD_STAT, CMD_PING = range(1, 9)
-MAX_CHUNK = 512
+MAX_CHUNK = 2048  # USB EXFS chunk, independent of 512-byte TFTP DATA packets
 VOLUMES = ("drv0", "sys0", "data0", "data1", "data2",
            "crd0", "crd1", "crd2")
 
@@ -156,11 +156,11 @@ class FxlinkUSB:
                  flags=0, timeout=15):
         if not self.dev:
             raise ConnectionError("Connect the USB device first")
-        if not 0 < len(path) < 320 or not 0 <= length <= 512:
+        if not 0 < len(path) < 320 or not 0 <= length <= MAX_CHUNK:
             raise ValueError("Invalid request path/size")
         if not 0 <= offset < 2**31:
             raise ValueError("File offset outside EX-word range")
-        if len(data) > 512:
+        if len(data) > MAX_CHUNK:
             raise ValueError("Payload too large")
         with self.lock:
             self.sequence = (self.sequence + 1) & 0xffffffff
@@ -185,7 +185,7 @@ class FxlinkUSB:
                     continue
                 try:
                     msg = msg_ptr.contents
-                    if msg.size > 1024:
+                    if msg.size > MAX_CHUNK + 12:
                         raise ConnectionError("Oversized EXFS response")
                     raw = ct.string_at(msg.data, msg.size)
                     application = bytes(msg.application).rstrip(b"\x00")
