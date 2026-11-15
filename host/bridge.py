@@ -21,7 +21,8 @@ import threading
 import time
 from pathlib import Path
 
-from exfs import Filesystem, FxlinkUSB, VOLUMES, remote_path, display_path
+from exfs import (Filesystem, FxlinkUSB, VOLUMES, remote_path, display_path,
+                  MAX_CHUNK, CancelledTransfer)
 
 BLOCK = 512
 TIMEOUT = 3
@@ -89,13 +90,21 @@ class TFTPHandler(socketserver.BaseRequestHandler):
         else:
             size = filesystem.stat(path)
         offset, block = 0, 1
+        cache_start, cache = 0, b""
         while True:
             if source is not None:
                 data = source[offset:offset+BLOCK]
+            elif offset >= size:
+                data = b""
             else:
-                total, data = filesystem.read(path, offset)
-                if total != size:
-                    raise IOError("File size changed during transfer")
+                if not (cache_start <= offset < cache_start+len(cache)):
+                    cache_start = offset
+                    total, cache = filesystem.read(path, offset, MAX_CHUNK)
+                    if total != size:
+                        raise IOError("File size changed during transfer")
+                    if not cache:
+                        raise IOError("Unexpected end of remote file")
+                data = cache[offset-cache_start:offset-cache_start+BLOCK]
             payload = struct.pack("!HH", 3, block) + data
             acknowledged = False
             for _ in range(RETRIES):
@@ -128,6 +137,7 @@ class TFTPHandler(socketserver.BaseRequestHandler):
         ack = struct.pack("!HH", 4, 0)
         expected = 1
         offset = 0
+        pending = bytearray()
         try:
             while True:
                 response = None
@@ -148,8 +158,13 @@ class TFTPHandler(socketserver.BaseRequestHandler):
                 if response is None:
                     raise TimeoutError("No TFTP DATA packet")
                 if response:
-                    filesystem.command(4, path, offset, len(response), response)
-                offset += len(response)
+                    pending.extend(response)
+                if len(pending) >= MAX_CHUNK or len(response) < BLOCK:
+                    if pending:
+                        filesystem.command(4, path, offset,
+                                           len(pending), bytes(pending))
+                        offset += len(pending)
+                        pending.clear()
                 ack = struct.pack("!HH", 4, expected)
                 expected = (expected+1) & 0xffff
                 if len(response) < BLOCK:
@@ -196,6 +211,8 @@ def gui(filesystem):
     status = tk.StringVar(value="Connected")
     tasks = queue.Queue()
     busy = False
+    close_after_cancel = False
+    cancel_event = threading.Event()
     volume = tk.StringVar(value="drv0")
 
     toolbar = ttk.Frame(root, padding=8)
@@ -215,33 +232,73 @@ def gui(filesystem):
     filelist.pack(fill="both", expand=True, padx=8)
     bottom = ttk.Frame(root, padding=8)
     bottom.pack(fill="x")
+    transfer_controls = ttk.Frame(root, padding=(8, 0))
+    transfer_controls.pack(side="bottom", fill="x")
+    progress_value = tk.DoubleVar(value=0)
+    progress_bar = ttk.Progressbar(transfer_controls, variable=progress_value,
+                                    maximum=100, mode="determinate")
+    progress_bar.pack(side="left", fill="x", expand=True, padx=(0, 8))
+    progress_label = tk.StringVar(value="")
+    ttk.Label(transfer_controls, textvariable=progress_label, width=19).pack(side="left")
+    cancel_btn = ttk.Button(transfer_controls, text="Cancel", state="disabled",
+                             command=lambda: request_cancel())
+    cancel_btn.pack(side="right")
     ttk.Label(root, textvariable=status, anchor="w", padding=7).pack(
         side="bottom", fill="x")
     lookup = {}
 
-    def run(action, finish=None):
+    def request_cancel():
+        if busy:
+            cancel_event.set()
+            status.set("Cancelling after current USB chunk...")
+            cancel_btn.configure(state="disabled")
+
+    def progress(done, total):
+        tasks.put(("progress", done, total))
+
+    def run(action, finish=None, transfer=False):
         nonlocal busy
         if busy:
             return
         busy = True
+        cancel_event.clear()
+        progress_value.set(0)
+        progress_label.set("")
+        cancel_btn.configure(state="normal" if transfer else "disabled")
         status.set("Working...")
         def thread():
             try:
                 result = action()
-                tasks.put((True, result, finish))
+                tasks.put(("done", True, result, finish))
             except Exception as exc:
-                tasks.put((False, str(exc), finish))
+                tasks.put(("done", False, exc, finish))
         threading.Thread(target=thread, daemon=True).start()
 
     def pump():
-        nonlocal busy
+        nonlocal busy, close_after_cancel
         try:
             while True:
-                ok, value, finish = tasks.get_nowait()
+                item = tasks.get_nowait()
+                if item[0] == "progress":
+                    _, done, total = item
+                    if total:
+                        progress_value.set(min(100, 100 * done / total))
+                        progress_label.set(f"{done}/{total} bytes")
+                    else:
+                        progress_label.set(f"{done} bytes")
+                    continue
+                _, ok, value, finish = item
                 busy = False
+                cancel_btn.configure(state="disabled")
+                if close_after_cancel:
+                    root.destroy()
+                    return
                 if not ok:
-                    messagebox.showerror("EX-word transfer error", value)
-                    status.set("Error: " + value)
+                    if isinstance(value, CancelledTransfer):
+                        status.set("Transfer cancelled")
+                    else:
+                        messagebox.showerror("EX-word transfer error", str(value))
+                        status.set("Error: " + str(value))
                 else:
                     status.set("Ready")
                     if finish:
@@ -249,6 +306,15 @@ def gui(filesystem):
         except queue.Empty:
             pass
         root.after(60, pump)
+
+    def on_close():
+        nonlocal close_after_cancel
+        if busy:
+            close_after_cancel = True
+            request_cancel()
+        else:
+            root.destroy()
+    root.protocol("WM_DELETE_WINDOW", on_close)
 
     def refresh():
         target = current.get()
@@ -296,12 +362,15 @@ def gui(filesystem):
             tmp = local + ".partial-exword"
             try:
                 with open(tmp, "wb") as output:
-                    filesystem.download(remote, output)
+                    filesystem.download(remote, output, progress=progress,
+                                        cancelled=cancel_event.is_set)
+                if cancel_event.is_set():
+                    raise CancelledTransfer("Download cancelled")
                 os.replace(tmp, local)
             finally:
                 if os.path.exists(tmp):
                     os.remove(tmp)
-        run(download, lambda _: status.set("Received " + item[1]))
+        run(download, lambda _: status.set("Received " + item[1]), transfer=True)
 
     def send():
         local = filedialog.askopenfilename()
@@ -311,8 +380,10 @@ def gui(filesystem):
         remote = child_path(name.encode("shift_jis"))
         def upload():
             with open(local, "rb") as source:
-                filesystem.upload(remote, source)
-        run(upload, lambda _: refresh())
+                filesystem.upload(remote, source, progress=progress,
+                                  cancelled=cancel_event.is_set,
+                                  size=os.path.getsize(local))
+        run(upload, lambda _: refresh(), transfer=True)
 
     def make_folder():
         name = simpledialog.askstring("New folder", "Folder name:")
@@ -323,7 +394,7 @@ def gui(filesystem):
     def delete():
         item = selected()
         if item and messagebox.askyesno("Delete", f"Permanently delete {item[1]}?"):
-            remote = current.get().rstrip("/") + "/" + item[1]
+            remote = child_path(item[2])
             run(lambda: filesystem.remove(remote), lambda _: refresh())
 
     def rename():
