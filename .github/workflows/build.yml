@@ -84,6 +84,10 @@ jobs:
           cp /tmp/fxsdk-exword/bin/fxlink host-dist/
           python3 -c 'import sys;sys.path.insert(0,"host");from exfs import FxlinkUSB; x=FxlinkUSB("host-dist/libfxlink.so"); x.close()'
           python3 -m compileall -q host
+          cc -std=c11 -O2 -Wall -Wextra -Werror \
+            tests/readers.c src/readers/casio_bitmap.c src/readers/cjf.c \
+            -o host-dist/test-readers
+          ./host-dist/test-readers
           python3 -m unittest discover -s host/tests -v
           python3 host/bridge.py --help >/dev/null
 
@@ -156,7 +160,7 @@ jobs:
           cmake -S fxsdk-src -B fxsdk-win-build -G Ninja \
             -DBUILD_SHARED_LIBS=ON \
             -DFXLINK_DISABLE_SDL2=ON -DFXLINK_DISABLE_UDISKS2=ON \
-            -DFXLINK_DISABLE_POLL=ON
+            -DFXLINK_DISABLE_POLL=ON -DFXLINK_DISABLE_ANSIESC=ON
           cmake --build fxsdk-win-build --target libfxlink --parallel 2
           mkdir -p host-dist
           cp fxsdk-win-build/libfxlink.dll host-dist/
