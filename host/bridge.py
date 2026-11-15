@@ -21,7 +21,7 @@ import threading
 import time
 from pathlib import Path
 
-from exfs import Filesystem, FxlinkUSB, VOLUMES
+from exfs import Filesystem, FxlinkUSB, VOLUMES, remote_path, display_path
 
 BLOCK = 512
 TIMEOUT = 3
@@ -189,6 +189,10 @@ def gui(filesystem):
     root.title("EXWord Explorer - USB")
     root.geometry("900x620")
     current = tk.StringVar(value="/drv0")
+    native_stack = [remote_path("/drv0")]
+
+    def child_path(raw):
+        return native_stack[-1] + b"\\" + raw
     status = tk.StringVar(value="Connected")
     tasks = queue.Queue()
     busy = False
@@ -248,16 +252,17 @@ def gui(filesystem):
 
     def refresh():
         target = current.get()
+        native = native_stack[-1]
         def update(result):
             lookup.clear()
             filelist.delete(*filelist.get_children())
             for i, (isdir, name, raw) in enumerate(result):
                 iid = str(i)
-                lookup[iid] = (isdir, name)
+                lookup[iid] = (isdir, name, raw)
                 filelist.insert("", "end", iid=iid,
                                 values=("Folder" if isdir else "File", name))
             status.set(f"{len(result)} entries - {target}")
-        run(lambda: filesystem.list(target), update)
+        run(lambda: filesystem.list(native), update)
 
     def selected():
         sel = filelist.selection()
@@ -266,16 +271,16 @@ def gui(filesystem):
     def enter(event=None):
         item = selected()
         if item and item[0]:
-            current.set(current.get().rstrip("/") + "/" + item[1])
+            native_stack.append(child_path(item[2]))
+            current.set(display_path(native_stack[-1]))
             refresh()
         elif item:
             receive()
 
     def up():
-        path = current.get()
-        components = path.strip("/").split("/")
-        if len(components) > 1:
-            current.set("/" + "/".join(components[:-1]))
+        if len(native_stack) > 1:
+            native_stack.pop()
+            current.set(display_path(native_stack[-1]))
             refresh()
 
     def receive():
@@ -285,7 +290,7 @@ def gui(filesystem):
         local = filedialog.asksaveasfilename(initialfile=item[1])
         if not local:
             return
-        remote = current.get().rstrip("/") + "/" + item[1]
+        remote = child_path(item[2])
         def download():
             # Write only complete downloads to the chosen path.
             tmp = local + ".partial-exword"
@@ -303,7 +308,7 @@ def gui(filesystem):
         if not local:
             return
         name = os.path.basename(local)
-        remote = current.get().rstrip("/") + "/" + name
+        remote = child_path(name.encode("shift_jis"))
         def upload():
             with open(local, "rb") as source:
                 filesystem.upload(remote, source)
@@ -312,7 +317,7 @@ def gui(filesystem):
     def make_folder():
         name = simpledialog.askstring("New folder", "Folder name:")
         if name:
-            run(lambda: filesystem.mkdir(current.get().rstrip("/") + "/" + name),
+            run(lambda: filesystem.mkdir(child_path(name.encode("shift_jis"))),
                 lambda _: refresh())
 
     def delete():
@@ -327,11 +332,12 @@ def gui(filesystem):
             return
         name = simpledialog.askstring("Rename", "New name:", initialvalue=item[1])
         if name and name != item[1]:
-            base = current.get().rstrip("/") + "/"
-            run(lambda: filesystem.rename(base + item[1], base + name),
+            run(lambda: filesystem.rename(child_path(item[2]),
+                                          child_path(name.encode("shift_jis"))),
                 lambda _: refresh())
 
     def change_volume(event=None):
+        native_stack[:] = [remote_path("/" + volume.get())]
         current.set("/" + volume.get())
         refresh()
 
