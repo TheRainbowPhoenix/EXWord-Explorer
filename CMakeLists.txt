@@ -13,6 +13,7 @@ find_package(Gint 2.11 REQUIRED)
 add_executable(explorer
   src/main.c
   src/explorer_fs.c
+  src/explorer_usb.c
 )
 target_compile_options(explorer PRIVATE
   -Wall -Wextra -Os -flto=auto -fno-pic -fno-pie
