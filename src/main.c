@@ -6,6 +6,7 @@
  * the program can browse directories/files much larger than its RAM.
  */
 #include "explorer_fs.h"
+#include "explorer_usb.h"
 #include <gint/config.h>
 #include <gint/display.h>
 #include <gint/keyboard.h>
@@ -36,6 +37,7 @@ static const char *volumes[] = {
 typedef struct {
     int screen, dialog, action, menu_choice;
     int selected, top, total;
+    int parents_selected[32], parents_top[32], depth;
     ex_entry_t rows[EX_ROWS];
     char directory[EX_PATH_MAX];
     char file[EX_PATH_MAX];
@@ -105,16 +107,35 @@ static void box_fill(int x1, int y1, int x2, int y2, int color)
 {
     drect(x1, y1, x2, y2, color);
 }
-static void header(const char *title, const char *subtitle)
+static void header(const char *path, const char *right)
 {
-    char name[80], small[80];
-    box_fill(0, 0, 527, 27, C_RGB(3, 9, 16));
-    printable(name, sizeof name, title, 58);
-    dtext(10, 8, C_WHITE, name);
-    box_fill(0, 28, 527, 48, C_RGB(25, 30, 27));
-    printable(small, sizeof small, subtitle, 63);
-    dtext(10, 34, C_BLACK, small);
-    dline(0, 48, 527, 48, C_DARK);
+    char visible[100];
+    int max = right && *right ? 48 : 64;
+    box_fill(0, 0, 527, 30, C_RGB(3, 9, 16));
+    printable(visible, sizeof visible, path, max);
+    dtext(8, 9, C_WHITE, visible);
+    if(right && *right) {
+        dtext(445, 9, C_WHITE, "|");
+        dtext(465, 9, C_WHITE, right);
+    }
+}
+static void loading(const char *name)
+{
+    char label[80];
+    dclear(C_WHITE);
+    header(name, "");
+    dtext(220, 143, C_BLACK, "Loading...");
+    dupdate();
+}
+static void human_size(int size, char out[8])
+{
+    if(size < 10000) snprintf(out, 8, "%d", size);
+    else if(size < 1024*1024)
+        snprintf(out, 8, "%dk", (size+1023)/1024);
+    else if(size < 10*1024*1024)
+        snprintf(out, 8, "%d.%dM", size/(1024*1024),
+            ((size%(1024*1024))*10)/(1024*1024));
+    else snprintf(out, 8, "%dM", size/(1024*1024));
 }
 static void footer(const char *hint)
 {
@@ -131,32 +152,34 @@ static void footer(const char *hint)
 static void draw_volumes(void)
 {
     char label[48];
-    header("EXWord Explorer", "Volumes - EXE: probe  ESC/ACON: exit");
-    for(int i=0; i<VOLUME_COUNT; i++) {
-        int y = 52 + i * 21;
+    header("EXWord Explorer /", "");
+    for(int i=0; i<=VOLUME_COUNT; i++) {
+        int y = 47 + i * 21;
         if(i == app.selected) box_fill(3, y-2, 523, y+18, C_RGB(23, 29, 31));
-        snprintf(label, sizeof label, "[DISK]  %s", volumes[i]);
+        if(i==VOLUME_COUNT) snprintf(label, sizeof label, "[USB]  Remote filesystem");
+        else snprintf(label, sizeof label, "[DISK]  %s", volumes[i]);
         dtext(12, y+3, C_BLACK, label);
-        dtext(345, y+3, C_DARK, "EXE to browse");
+        dtext(345, y+3, C_DARK,
+            i==VOLUME_COUNT ? "EXE start" : "EXE to browse");
     }
     footer("EXE open   ESC exit   ACON exit");
 }
 static void draw_directory(void)
 {
     char label[100];
-    header("EXWord Explorer", app.directory);
-    dtext(10, 51, C_DARK, "TYPE");
-    dtext(64, 51, C_DARK, "NAME (hidden included)");
+    header(app.directory, "");
+    dtext(10, 34, C_DARK, "TYPE");
+    dtext(64, 34, C_DARK, "NAME (hidden included)");
     snprintf(label, sizeof label, "%d item%s", app.total,
         app.total == 1 ? "" : "s");
-    dtext(422, 51, C_DARK, label);
+    dtext(422, 34, C_DARK, label);
 
     if(app.total == 0) {
-        dtext(16, 91, C_DARK, "(empty or unavailable)");
+        dtext(16, 74, C_DARK, "(empty)");
     }
     for(int i=0; i<EX_ROWS && app.top+i<app.total; i++) {
         int index = app.top+i;
-        int y = 69+i*12;
+        int y = 52+i*12;
         ex_entry_t *e = &app.rows[i];
         if(index == app.selected)
             box_fill(3, y-2, 521, y+10, C_RGB(23, 29, 31));
@@ -172,8 +195,8 @@ static void draw_directory(void)
     if(app.total > EX_ROWS) {
         int track = 212;
         int thumb = max_int(9, track*EX_ROWS / app.total);
-        int y = 71 + (track-thumb)*app.top / max_int(1,app.total-EX_ROWS);
-        box_fill(523, 71, 526, 71+track, C_LIGHT);
+        int y = 54 + (track-thumb)*app.top / max_int(1,app.total-EX_ROWS);
+        box_fill(523, 54, 526, 54+track, C_LIGHT);
         box_fill(523, y, 526, y+thumb, C_DARK);
     }
     footer("EXE open  ESC back  PgUp/Dn  SOUND menu");
@@ -200,18 +223,17 @@ static void hex_refresh(void)
 }
 static void draw_hex(void)
 {
-    char subtitle[100], line[32];
-    snprintf(subtitle, sizeof subtitle, "%s  |  %d bytes",
-        base_name(app.file), app.file_size);
-    header("HEX VIEWER", subtitle);
-    dtext(9, 51, C_DARK, "OFFSET");
-    dtext(104, 51, C_DARK, "HEX BYTES");
-    dtext(402, 51, C_DARK, "ASCII");
+    char amount[8], line[32];
+    human_size(app.file_size, amount);
+    header(app.file, amount);
+    dtext(9, 34, C_DARK, "OFFSET");
+    dtext(104, 34, C_DARK, "HEX BYTES");
+    dtext(402, 34, C_DARK, "ASCII");
 
     for(int row=0; row<EX_ROWS; row++) {
         int offset = app.page_base + row*HEX_COLS;
         if(offset >= app.file_size) break;
-        int y = 71+row*12;
+        int y = 52+row*12;
         snprintf(line, sizeof line, "%08X", (unsigned)offset);
         dtext(10, y, C_DARK, line);
         char ascii[HEX_COLS+1];
@@ -316,6 +338,8 @@ static void redraw(void)
 }
 static void reload_directory(void)
 {
+    loading(app.directory);
+    int old_top = app.top;
     int rc = ex_list(app.directory, app.top, app.rows);
     if(rc < 0) {
         app.total = 0;
@@ -323,23 +347,20 @@ static void reload_directory(void)
         return;
     }
     app.total = rc;
-    if(app.total == 0) {
-        app.selected = app.top = 0;
-        return;
-    }
-    if(app.selected >= app.total) app.selected = app.total-1;
-    if(app.selected < 0) app.selected = 0;
+    if(app.total == 0) { app.selected = app.top = 0; return; }
+    app.selected = max_int(0, min_int(app.selected, app.total - 1));
     if(app.top > app.selected) app.top = app.selected;
     if(app.selected >= app.top+EX_ROWS)
         app.top = app.selected-EX_ROWS+1;
     if(app.top > max_int(0, app.total-EX_ROWS))
         app.top = max_int(0, app.total-EX_ROWS);
-    if(ex_list(app.directory, app.top, app.rows) < 0)
+    if(old_top != app.top &&
+       ex_list_window(app.directory, app.top, app.total, app.rows) < 0)
         status_message("Directory refresh failed");
 }
 static void choose_line(int next)
 {
-    int count = app.screen == SCREEN_VOLUMES ? VOLUME_COUNT : app.total;
+    int count = app.screen == SCREEN_VOLUMES ? VOLUME_COUNT+1 : app.total;
     if(count <= 0) return;
     app.selected = max_int(0, min_int(count-1, next));
     if(app.screen == SCREEN_DIRECTORY) {
@@ -347,7 +368,10 @@ static void choose_line(int next)
         if(app.selected < app.top) app.top = app.selected;
         else if(app.selected >= app.top + EX_ROWS)
             app.top = app.selected-EX_ROWS+1;
-        if(old != app.top) reload_directory();
+        if(old != app.top) {
+            int rc = ex_list_window(app.directory, app.top, app.total, app.rows);
+            if(rc < 0) status_rc("Scroll", rc);
+        }
     }
 }
 static int current_entry_path(char out[EX_PATH_MAX])
@@ -363,6 +387,11 @@ static void enter_selected(void)
 {
     char target[EX_PATH_MAX];
     if(app.screen == SCREEN_VOLUMES) {
+        if(app.selected==VOLUME_COUNT) {
+            ex_usb_remote_screen();
+            app.status[0]=0;
+            return;
+        }
         snprintf(target, sizeof target, "\\\\%s", volumes[app.selected]);
     }
     else if(current_entry_path(target) < 0) {
@@ -388,8 +417,15 @@ static void enter_selected(void)
     }
 
     ex_entry_t temp[EX_ROWS];
+    loading(target);
     int rc = ex_list(target, 0, temp);
     if(rc < 0) { status_rc("Open directory", rc); return; }
+    if(app.screen == SCREEN_DIRECTORY && app.depth < 32) {
+        app.parents_selected[app.depth] = app.selected;
+        app.parents_top[app.depth] = app.top;
+        app.depth++;
+    }
+    else if(app.screen == SCREEN_VOLUMES) app.depth = 0;
     copy_string(app.directory, sizeof app.directory, target);
     app.screen = SCREEN_DIRECTORY;
     app.selected = app.top = 0;
@@ -409,11 +445,17 @@ static void go_back(void)
         char *last = strrchr(app.directory, '\\');
         if(last && last > app.directory+1) {
             *last = '\0';
-            app.selected = app.top = 0;
+            if(app.depth > 0) {
+                app.depth--;
+                app.selected = app.parents_selected[app.depth];
+                app.top = app.parents_top[app.depth];
+            }
+            else app.selected = app.top = 0;
             reload_directory();
         }
         else {
             app.screen = SCREEN_VOLUMES;
+            app.depth = 0;
             app.selected = app.top = 0;
         }
     }
@@ -687,24 +729,24 @@ int main(void)
         if(ev.type==KEYEV_TOUCH_DOWN) {
             /* Fullscreen touch: tap a file/volume; tap again to open. */
             if(app.dialog==DIALOG_NONE && app.screen==SCREEN_DIRECTORY &&
-                ev.y>=67 && ev.y<67+EX_ROWS*12) {
-                int index=app.top+(ev.y-67)/12;
+                ev.y>=50 && ev.y<50+EX_ROWS*12) {
+                int index=app.top+(ev.y-50)/12;
                 if(index<app.total) {
                     if(index==app.selected) enter_selected();
                     else choose_line(index);
                 }
             }
             else if(app.dialog==DIALOG_NONE && app.screen==SCREEN_VOLUMES &&
-                ev.y>=50 && ev.y<50+VOLUME_COUNT*21) {
-                int index=(ev.y-50)/21;
-                if(index<VOLUME_COUNT) {
+                ev.y>=45 && ev.y<45+(VOLUME_COUNT+1)*21) {
+                int index=(ev.y-45)/21;
+                if(index<=VOLUME_COUNT) {
                     if(index==app.selected) enter_selected();
                     else choose_line(index);
                 }
             }
             else if(app.dialog==DIALOG_NONE && app.screen==SCREEN_HEX &&
-                    ev.y>=71 && ev.y<71+EX_ROWS*12) {
-                int row=(ev.y-71)/12;
+                    ev.y>=50 && ev.y<50+EX_ROWS*12) {
+                int row=(ev.y-50)/12;
                 app.byte_offset=min_int(max_int(0,app.file_size-1),
                     app.page_base+HEX_COLS*row);
                 hex_refresh();
