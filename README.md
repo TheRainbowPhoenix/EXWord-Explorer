@@ -65,3 +65,36 @@ Install with libexword using a valid existing authentication setup. Do not
 reset installed dictionaries for a test installation.
 
 The workflow ensures that explorer.d01 fits the 128 KiB EX-word loader limit.
+
+
+## USB remote filesystem (fxlink + local TFTP)
+
+The volume home screen now includes **USB Remote**. This opens a USB
+fxlink bulk interface and runs the EXFS/1 filesystem RPC server. The
+companion desktop app (Python 3.10+, libusb and Tkinter) provides a
+graphical file manager, uploads/downloads and a **localhost-only TFTP
+bridge** usable with standard TFTP clients in binary/octet mode.
+
+GitHub Actions also builds **libfxlink.so** and uploads the
+**EXWord-Explorer-host-linux** artifact alongside Japanese and Chinese
+EX-word installation packages. Its scripts are in host/exfs.py and
+host/bridge.py; detailed commands and the protocol are in
+[host/README.md](host/README.md).
+
+The TFTP listener binds to 127.0.0.1:6969 and is read-only by default.
+Explicit --allow-write enables TFTP uploading new files. The desktop GUI
+offers file send, receive, rename, delete and create-folder actions.
+A virtual .exword-list text file provides listings to command-line TFTP
+clients. No overwriting is implicit.
+
+The directory and hex screens now show their full path in a **single
+header row**, with compact human-readable byte size at the far right of
+the hex viewer. Folder loads display "Loading..." while the native
+enumeration runs, moving between known directory pages stops scanning
+once the window is filled, and going back from a child directory restores
+the previous selection and scroll offset.
+
+**Hardware testing:** The USB service compiles and the Python bridge
+passes offline binary TFTP tests in CI. This does not establish that the
+EX-word USB peripheral can coexist with OS filesystem syscalls in
+practice; please verify on a device, and back up files before writes.
