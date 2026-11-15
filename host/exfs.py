@@ -9,6 +9,7 @@ import ctypes as ct
 import ctypes.util
 import io
 import os
+import sys
 import struct
 import threading
 import time
@@ -73,7 +74,8 @@ def display_path(native: bytes) -> str:
 
 
 class FxlinkUSB:
-    def __init__(self, library: str | None = None):
+    def __init__(self, library: str | None = None, *, verbose: bool = False):
+        self.verbose = bool(verbose)
         root = Path(__file__).resolve().parent
         guesses = ([library] if library else [
             str(root / "libfxlink.so"), str(root / "libfxlink.dll"),
@@ -114,15 +116,24 @@ class FxlinkUSB:
         self.dev = None
         self.lock = threading.Lock()
         self.sequence = 0
+        self._debug("using libfxlink=%s / libusb=%s",
+                    getattr(self.fx, "_name", "<unknown>"),
+                    getattr(self.usb, "_name", "<unknown>"))
+
+    def _debug(self, fmt, *args):
+        if self.verbose:
+            print("[exfs USB] " + (fmt % args), file=sys.stderr, flush=True)
 
     def _events(self):
         tv = Timeval(0, 100_000)
         rc = self.usb.libusb_handle_events_timeout_completed(
             self.ctx, ct.byref(tv), None)
         if rc < 0:
+            self._debug("libusb event-loop error: %d", rc)
             raise ConnectionError(f"libusb event loop failed: {rc}")
 
     def connect(self, timeout=15):
+        self._debug("scanning USB for fxlink interface (timeout=%ss)", timeout)
         deadline = time.monotonic() + timeout
         flt = FxlinkFilter()
         flt.intf_fxlink = True
@@ -133,10 +144,13 @@ class FxlinkUSB:
             self._events()
         if not self.dev:
             raise TimeoutError("No fxlink-compatible EX-word found; start USB Remote on device")
+        self._debug("fxlink USB device found, claiming interface")
         if not self.fx.fxlink_device_claim_fxlink(self.dev):
             raise ConnectionError("Unable to claim USB interface (check permissions/WinUSB)")
+        self._debug("USB interface claimed, starting the bulk-IN receiver once")
         if not self.fx.fxlink_device_start_bulk_IN(self.dev):
             raise ConnectionError("Could not start bulk input")
+        self._debug("bulk-IN receiver started; libfxlink automatically keeps it listening")
 
     def exchange(self, cmd: int, path: bytes, offset=0, length=0, data=b"",
                  flags=0, timeout=15):
@@ -154,11 +168,15 @@ class FxlinkUSB:
             payload = REQUEST.pack(ident, offset, length, len(path),
                                    cmd, flags) + path + data
             buffer = ct.create_string_buffer(payload)
+            self._debug("request #%d cmd=%d path=%r offset=%d length=%d data=%d bytes",
+                        ident, cmd, path, offset, length, len(data))
             ok = self.fx.fxlink_device_send_bulk_OUT(
                 self.ctx, self.dev, b"exfs", b"req",
                 buffer, len(payload))
             if not ok:
+                self._debug("request #%d: bulk-OUT submission failed", ident)
                 raise ConnectionError("fxlink USB send failed")
+            self._debug("request #%d sent; waiting for response", ident)
             deadline = time.monotonic() + timeout
             while time.monotonic() < deadline:
                 self._events()
@@ -172,22 +190,30 @@ class FxlinkUSB:
                     raw = ct.string_at(msg.data, msg.size)
                     application = bytes(msg.application).rstrip(b"\x00")
                     typ = bytes(msg.type).rstrip(b"\x00")
+                    self._debug("receive packet app=%r type=%r size=%d",
+                                application, typ, len(raw))
                 finally:
                     # libfxlink's bulk_IN_callback automatically resubmits
                     # the active transfer. A second start here always fails:
                     # the receiver is already running.
                     self.fx.fxlink_message_free(msg_ptr, True)
                 if application != b"exfs" or typ != b"resp" or len(raw) < 12:
+                    self._debug("discarding unexpected message")
                     continue
                 number, status, total = RESPONSE.unpack_from(raw)
+                self._debug("reply #%d status=%d total=%d payload=%d bytes",
+                            number, status, total, len(raw)-12)
                 if number != ident:
+                    self._debug("stale/out-of-order reply: expected #%d", ident)
                     continue
                 if status < 0:
                     raise RemoteError(status)
                 return total, raw[12:]
+            self._debug("request #%d timed out after %.1f seconds", ident, timeout)
             raise TimeoutError("No EXFS response; check USB connectivity")
 
     def close(self):
+        self._debug("closing USB bridge")
         try:
             if self.dev:
                 self.fx.fxlink_device_cleanup(self.dev)
