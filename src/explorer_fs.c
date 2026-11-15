@@ -274,3 +274,38 @@ int ex_copy_file(const char *from, const char *to)
     op_t q = { .a = from, .b = to };
     return fs_invoke(GINT_CALL(copy_native, (void *)&q));
 }
+
+typedef struct {
+    const char *path;
+    int offset, length;
+    const uint8_t *bytes;
+} write_data_t;
+
+static int remote_write_native(write_data_t *q)
+{
+    if(q->offset < 0 || q->length < 0 || q->length > 512) return -2;
+    int fd = exword_sys_open(q->path, EX_READ_WRITE);
+    if(fd < 0) return fd;
+    int rc = exword_sys_seek(fd, q->offset, 0);
+    if(rc >= 0) {
+        int n = 0;
+        while(n < q->length) {
+            int count = exword_sys_write(fd, q->bytes+n, q->length-n);
+            if(count <= 0 || count > q->length-n) {
+                rc = count < 0 ? count : -1;
+                break;
+            }
+            n += count;
+        }
+        if(n == q->length) rc = n;
+    }
+    int closed = exword_sys_close(fd);
+    return rc >= 0 && closed < 0 ? closed : rc;
+}
+int ex_remote_write(const char *path, int offset,
+    const uint8_t *data, int length)
+{
+    write_data_t q = { .path=path, .offset=offset,
+        .length=length, .bytes=data };
+    return fs_invoke(GINT_CALL(remote_write_native, (void *)&q));
+}
