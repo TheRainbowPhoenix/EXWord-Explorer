@@ -20,8 +20,10 @@ enum {
     EXFS_LIST = 1, EXFS_READ, EXFS_CREATE, EXFS_WRITE, EXFS_DELETE,
     EXFS_RENAME, EXFS_STAT, EXFS_PING
 };
-#define EXFS_PACKET 1024
-#define EXFS_DATA_MAX 768
+/* USB chunks can be larger than RFC 1350's fixed 512-byte TFTP block.
+   2048 balances fewer round trips with the EX-word's limited RAM. */
+#define EXFS_DATA_MAX 2048
+#define EXFS_PACKET (EXFS_DATA_MAX + EX_PATH_MAX + 16)
 
 static usb_interface_t const *usb_interfaces[] = { &usb_ff_bulk, NULL };
 static uint8_t request[EXFS_PACKET];
@@ -171,7 +173,7 @@ static int dispatch(uint8_t const *data, int size)
         }
     }
     else if(cmd==EXFS_READ && offset<=0x7fffffff) {
-        if(amount>512) amount=512;
+        if(amount>EXFS_DATA_MAX) amount=EXFS_DATA_MAX;
         int n=ex_read(path, (int)offset, body, amount, &total);
         if(n<0) status=n;
         else { status=0; body_size=n; }
@@ -184,7 +186,7 @@ static int dispatch(uint8_t const *data, int size)
     else if(cmd==EXFS_CREATE && remaining==0) {
         status=ex_create(path, !!(flags&1));
     }
-    else if(cmd==EXFS_WRITE && amount<=512 && remaining==amount &&
+    else if(cmd==EXFS_WRITE && amount<=EXFS_DATA_MAX && remaining==amount &&
         offset<=0x7fffffff && offset+(uint32_t)amount<=0x7fffffff) {
         status=ex_remote_write(path, (int)offset, payload, amount);
         if(status==amount) status=0;
@@ -245,7 +247,9 @@ void ex_usb_remote_screen(void)
         if(got!=(int)h.size) continue;
         if(dispatch(request, got)) {
             served++;
-            screen("USB connected - remote filesystem ready", served);
+            /* Refreshing the LCD for every USB packet can dominate small
+               transfers; show progress periodically instead. */
+            if((served & 15) == 0) screen("USB connected - remote filesystem ready", served);
         }
     }
     usb_close();
