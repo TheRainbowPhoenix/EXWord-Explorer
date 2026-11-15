@@ -164,7 +164,10 @@ static int dispatch(uint8_t const *data, int size)
     }
     else if(cmd==EXFS_LIST && offset<=0x7fffffff) {
         ex_entry_t rows[EX_ROWS];
-        status=ex_list(path, (int)offset, rows);
+        /* For subsequent pages, amount carries the previously returned
+           directory count. Avoid recounting 100+ entries each page. */
+        status=amount>0 ? ex_list_window(path,(int)offset,amount,rows) :
+            ex_list(path,(int)offset,rows);
         if(status==-1) status=0; /* Native API: empty directory */
         if(status>=0) {
             total=status;
