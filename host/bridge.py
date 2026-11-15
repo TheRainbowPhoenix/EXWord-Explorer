@@ -367,10 +367,12 @@ def main(argv=None):
                         choices=["127.0.0.1"],
                         help="Bind to localhost only")
     parser.add_argument("--timeout", type=int, default=15)
+    parser.add_argument("--verbose", "-v", action="store_true",
+                        help="Log USB connection, EXFS request/reply IDs and errors")
     opts = parser.parse_args(argv)
     if opts.no_gui and opts.no_tftp:
         parser.error("One of GUI or TFTP must remain enabled")
-    transport = FxlinkUSB(opts.libfxlink)
+    transport = FxlinkUSB(opts.libfxlink, verbose=opts.verbose)
     server = None
     try:
         transport.connect(timeout=opts.timeout)
