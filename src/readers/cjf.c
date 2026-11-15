@@ -10,7 +10,7 @@ static uint32_t be32(uint8_t const *p)
     return ((uint32_t)p[0]<<24) | ((uint32_t)p[1]<<16) |
            ((uint32_t)p[2]<<8) | p[3];
 }
-static int read_bytes(casio_stream_t const *file, uint32_t pos,
+static int read_bytes(cjf_stream_t const *file, uint32_t pos,
     void *buffer, size_t n)
 {
     if(!file || !file->read || pos>file->size ||
@@ -43,7 +43,7 @@ static int32_t code_rank(cjf_range_t const *r, uint32_t code)
     }
     return -1;
 }
-int cjf_open(casio_stream_t const *file, cjf_font_t *font)
+int cjf_open(cjf_stream_t const *file, cjf_font_t *font)
 {
     uint8_t head[10];
     if(!font) return -1;
