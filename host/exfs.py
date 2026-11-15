@@ -19,8 +19,8 @@ REQUEST = struct.Struct("<IIHHBB")
 RESPONSE = struct.Struct("<IiI")
 CMD_LIST, CMD_READ, CMD_CREATE, CMD_WRITE, CMD_DELETE, CMD_RENAME, CMD_STAT, CMD_PING = range(1, 9)
 MAX_CHUNK = 512
-VOLUMES = frozenset(("drv0", "drv1", "drv2", "data0", "crd0", "crd1",
-                     "crd2", "sys0", "sys1", "rom0", "rom1"))
+VOLUMES = ("drv0", "sys0", "data0", "data1", "data2",
+           "crd0", "crd1", "crd2")
 
 
 class RemoteError(OSError):
