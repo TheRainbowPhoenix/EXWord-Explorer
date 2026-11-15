@@ -8,6 +8,11 @@ on:
 permissions:
   contents: read
 
+# Keep only the latest build for each branch/PR to avoid queueing old commits.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
