@@ -13,12 +13,12 @@ static casio_bitmap_t bitmap;
 static cjf_font_t font;
 static int type, range_no;
 static uint32_t first_glyph;
-static uint8_t glyph[4096];
-static uint8_t row[1100];
+/* Bitmaps and fonts never render simultaneously, so reuse their scratch RAM. */
+static union { uint8_t glyph[2048]; uint8_t row[1100]; } scratch;
 
 /* The OS does not expose a persistent gint-world descriptor.
  * Cache adjacent reads, particularly the per-byte CJF run tokens and rows. */
-static uint8_t cache[4096];
+static uint8_t cache[2048];
 static uint32_t cache_start;
 static int cache_size;
 
@@ -65,13 +65,13 @@ int preview_open(char const *filename, int format)
     type=format;
     if(format==PREVIEW_BITMAP) {
         rc=casio_bitmap_open(&stream,&bitmap);
-        if(rc || bitmap.stride>sizeof row) return -1;
+        if(rc || bitmap.stride>sizeof scratch.row) return -1;
     }
     else if(format==PREVIEW_CJF) {
         rc=cjf_open(&stream,&font);
         if(rc) return rc;
         if(!font.range_count) return -1;
-        if(font.ranges[0].glyph_bytes>sizeof glyph) return -1;
+        if(font.ranges[0].glyph_bytes>sizeof scratch.glyph) return -1;
     }
     else return -1;
     return 0;
@@ -118,7 +118,7 @@ int preview_render(void)
 {
     dclear(C_WHITE);
     if(type==PREVIEW_BITMAP) {
-        int rc=casio_bitmap_render(&stream,&bitmap,row,sizeof row,plot565,NULL);
+        int rc=casio_bitmap_render(&stream,&bitmap,scratch.row,sizeof scratch.row,plot565,NULL);
         if(rc) return rc;
         dupdate();
         return 0;
@@ -129,11 +129,11 @@ int preview_render(void)
     if(cw<38) cw=38;
     int ch=r->height+16;
     int cols=columns(), per=page_count();
-    if(r->glyph_bytes>sizeof glyph) return -1;
+    if(r->glyph_bytes>sizeof scratch.glyph) return -1;
     for(int pos=0;pos<per;pos++) {
         uint32_t index=first_glyph+(uint32_t)pos;
         if(index>=r->count) break;
-        if(cjf_read_glyph(&font,range_no,index,glyph,sizeof glyph))
+        if(cjf_read_glyph(&font,range_no,index,scratch.glyph,sizeof scratch.glyph))
             return -1;
         int ox=pos%cols*cw;
         int oy=pos/cols*ch;
@@ -141,7 +141,7 @@ int preview_render(void)
         for(int y=0;y<r->height;y++) {
             if(oy+y>=290) break;
             for(int x=0;x<r->width && ox+x<528;x++) {
-                if(glyph[y*stride+x/8] & (0x80>>(x&7)))
+                if(scratch.glyph[y*stride+x/8] & (0x80>>(x&7)))
                     dpixel(ox+x,oy+y,C_BLACK);
             }
         }
