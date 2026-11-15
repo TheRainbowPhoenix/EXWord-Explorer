@@ -13,7 +13,40 @@
 #define EX_READ_WRITE 3
 
 static int usb_active;
-void ex_fs_usb_mode(int on) { usb_active = on; }
+static int cached_fd=-1, cached_mode;
+static char cached_path[EX_PATH_MAX];
+
+/* Keep one USB file descriptor open across adjacent 2-KiB READ/WRITE RPCs.
+   The native EX-word OS can seek this handle without reopening each chunk. */
+static void close_cached(void)
+{
+    if(cached_fd>=0) exword_sys_close(cached_fd);
+    cached_fd=-1;
+    cached_path[0]=0;
+}
+static int open_native(const char *path, int mode, int reuse)
+{
+    if(!reuse) return exword_sys_open(path,mode);
+    if(cached_fd>=0 && cached_mode==mode &&
+        !strcmp(cached_path,path)) return cached_fd;
+    close_cached();
+    int fd=exword_sys_open(path,mode);
+    if(fd>=0) {
+        cached_fd=fd;
+        cached_mode=mode;
+        snprintf(cached_path,sizeof cached_path,"%s",path);
+    }
+    return fd;
+}
+static int close_native(int fd, int reuse)
+{
+    return reuse ? 0 : exword_sys_close(fd);
+}
+void ex_fs_usb_mode(int on)
+{
+    if(!on) close_cached();
+    usb_active=on;
+}
 static int fs_invoke(gint_call_t action)
 {
     /* Switching worlds restores USB hardware and disconnects the host. */
@@ -129,17 +162,18 @@ int ex_exists_in(const char *directory, const char *name)
 
 typedef struct {
     const char *path;
-    int offset, limit, size;
+    int offset, limit, size, cache;
     uint8_t *bytes;
 } io_t;
 
 static int read_native(io_t *q)
 {
-    int fd = exword_sys_open(q->path, EX_READ_ONLY);
+    int fd = open_native(q->path, EX_READ_ONLY, q->cache);
     if(fd < 0) return fd;
     int size = exword_sys_get_filesize(fd);
     if(size < 0) {
-        exword_sys_close(fd);
+        if(q->cache) close_cached();
+        else exword_sys_close(fd);
         return size;
     }
     q->size = size;
@@ -154,14 +188,16 @@ static int read_native(io_t *q)
             if(rc > length) rc = -1;
         }
     }
-    int closed = exword_sys_close(fd);
+    int closed = close_native(fd,q->cache);
     if(rc >= 0 && closed < 0) return closed;
+    if(rc < 0 && q->cache) close_cached();
     return rc;
 }
 
 int ex_read(const char *path, int offset, uint8_t *data, int max, int *size)
 {
-    io_t q = { .path = path, .offset = offset, .limit = max, .bytes = data };
+    io_t q = { .path = path, .offset = offset, .limit = max,
+        .bytes = data, .cache = usb_active };
     if(max < 0 || !size) return -1;
     int rc = fs_invoke(GINT_CALL(read_native, (void *)&q));
     if(rc >= 0) *size = q.size;
@@ -170,7 +206,7 @@ int ex_read(const char *path, int offset, uint8_t *data, int max, int *size)
 
 static int write_native(io_t *q)
 {
-    int fd = exword_sys_open(q->path, EX_READ_WRITE);
+    int fd = open_native(q->path, EX_READ_WRITE, q->cache);
     if(fd < 0) return fd;
     int rc = exword_sys_seek(fd, q->offset, 0);
     if(rc >= 0) {
@@ -195,6 +231,7 @@ typedef struct {
 
 static int create_native(op_t *q)
 {
+    close_cached();
     return exword_sys_create(q->a, q->type);
 }
 int ex_create(const char *path, int directory)
@@ -204,6 +241,7 @@ int ex_create(const char *path, int directory)
 }
 static int delete_native(op_t *q)
 {
+    close_cached();
     return exword_sys_delete(q->a);
 }
 int ex_delete(const char *path)
@@ -213,6 +251,7 @@ int ex_delete(const char *path)
 }
 static int rename_native(op_t *q)
 {
+    close_cached();
     return exword_sys_rename(q->a, q->b);
 }
 int ex_rename(const char *from, const char *to)
@@ -282,6 +321,7 @@ typedef struct {
     const char *path;
     int offset, length;
     const uint8_t *bytes;
+    int cache;
 } write_data_t;
 
 static int remote_write_native(write_data_t *q)
@@ -302,13 +342,14 @@ static int remote_write_native(write_data_t *q)
         }
         if(n == q->length) rc = n;
     }
-    int closed = exword_sys_close(fd);
+    int closed = close_native(fd,q->cache);
+    if(rc < 0 && q->cache) close_cached();
     return rc >= 0 && closed < 0 ? closed : rc;
 }
 int ex_remote_write(const char *path, int offset,
     const uint8_t *data, int length)
 {
     write_data_t q = { .path=path, .offset=offset,
-        .length=length, .bytes=data };
+        .length=length, .bytes=data, .cache=usb_active };
     return fs_invoke(GINT_CALL(remote_write_native, (void *)&q));
 }
