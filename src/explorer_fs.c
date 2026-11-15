@@ -283,7 +283,7 @@ typedef struct {
 
 static int remote_write_native(write_data_t *q)
 {
-    if(q->offset < 0 || q->length < 0 || q->length > 512) return -2;
+    if(q->offset < 0 || q->length < 0 || q->length > 2048) return -2;
     int fd = exword_sys_open(q->path, EX_READ_WRITE);
     if(fd < 0) return fd;
     int rc = exword_sys_seek(fd, q->offset, 0);
