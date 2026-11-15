@@ -5,6 +5,7 @@
 #include <gint/keyboard.h>
 #include <gint/usb.h>
 #include <gint/usb-ff-bulk.h>
+#include <gint/defs/timeout.h>
 #include <gint/drivers/touch.h>
 #include <stdint.h>
 #include <string.h>
@@ -56,8 +57,10 @@ static void screen(const char *detail, int count)
     dtext(12, 180, C_BLACK, "Only expose the host TFTP service on 127.0.0.1.");
     snprintf(text, sizeof text, "%d requests served", count);
     dtext(12, 215, C_BLACK, text);
-    drect(0, 291, 527, 319, C_RGB(3, 9, 16));
-    dtext(8, 299, C_WHITE, "ESC / AC-ON : disconnect and return");
+    drect(0, 281, 527, 319, C_RGB(3, 9, 16));
+    dtext(8, 291, C_WHITE, "ESC / AC-ON : stop USB");
+    drect(367, 284, 522, 317, C_RGB(17, 25, 25));
+    dtext(385, 297, C_WHITE, "STOP USB");
     dupdate();
 }
 
@@ -230,8 +233,11 @@ void ex_usb_remote_screen(void)
             active=now;
         }
         key_event_t ev=pollevent();
-        if(ev.type==KEYEV_DOWN &&
-           (ev.key==KEY_EXIT || ev.key==KEY_ACON)) break;
+        if((ev.type==KEYEV_DOWN &&
+           (ev.key==KEY_EXIT || ev.key==KEY_ACON ||
+            ev.key==KEY_EX_AUDIO)) ||
+           (ev.type==KEYEV_TOUCH_DOWN &&
+            ev.x>=367 && ev.y>=281)) break;
         if(!now) continue;
 
         usb_fxlink_header_t h;
@@ -243,8 +249,15 @@ void ex_usb_remote_screen(void)
             usb_fxlink_drop_transaction();
             continue;
         }
-        int got=usb_read_sync(usb_ff_bulk_input(), request, h.size, false);
-        if(got!=(int)h.size) continue;
+        /* A stalled or unplugged host must not trap the app forever inside
+           the synchronous payload read. Return to key/touch polling. */
+        timeout_t deadline = timeout_make_ms(300);
+        int got=usb_read_sync_timeout(usb_ff_bulk_input(), request,
+            h.size, false, &deadline);
+        if(got!=(int)h.size) {
+            usb_fxlink_drop_transaction();
+            continue;
+        }
         if(dispatch(request, got)) {
             served++;
             /* Refreshing the LCD for every USB packet can dominate small
@@ -252,6 +265,7 @@ void ex_usb_remote_screen(void)
             if((served & 15) == 0) screen("USB connected - remote filesystem ready", served);
         }
     }
+    screen("Stopping USB...", served);
     usb_close();
     ex_fs_usb_mode(0);
 }
