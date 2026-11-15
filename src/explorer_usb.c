@@ -23,12 +23,11 @@ enum {
 };
 /* USB chunks can be larger than RFC 1350's fixed 512-byte TFTP block.
    2048 balances fewer round trips with the EX-word's limited RAM. */
-#define EXFS_DATA_MAX 2048
-#define EXFS_PACKET (EXFS_DATA_MAX + EX_PATH_MAX + 16)
-
+/* Shared workspace is available to preview.c whenever USB is off. */
+uint8_t ex_shared_io[EXFS_PACKET];
+#define request ex_shared_io
+#define answer ex_shared_io
 static usb_interface_t const *usb_interfaces[] = { &usb_ff_bulk, NULL };
-static uint8_t request[EXFS_PACKET];
-static uint8_t answer[EXFS_PACKET];
 
 static uint16_t read16(uint8_t const *p)
 {
