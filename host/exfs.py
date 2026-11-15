@@ -59,6 +59,7 @@ def remote_path(local: str | bytes) -> bytes:
         raise ValueError("Remote path must begin with a recognized EX-word volume")
     if any(part in ("", ".", "..") for part in elements):
         raise ValueError("Empty path segments and parent traversal are forbidden")
+    elements[0] = elements[0].lower()
     raw = ("\\\\" + "\\".join(elements)).encode("shift_jis")
     if len(raw) >= 320:
         raise ValueError("EX-word path exceeds 319 bytes")
@@ -67,7 +68,8 @@ def remote_path(local: str | bytes) -> bytes:
 
 def display_path(native: bytes) -> str:
     """Native paths are Shift-JIS; preserve undecodable byte escapes."""
-    return native.decode("shift_jis", errors="backslashreplace").replace("\\", "/")
+    shown = native.decode("shift_jis", errors="replace").replace("\\", "/")
+    return shown[1:] if shown.startswith("//") else shown
 
 
 class FxlinkUSB:
