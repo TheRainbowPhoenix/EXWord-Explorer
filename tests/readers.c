@@ -67,7 +67,6 @@ static void font_fixture(void)
     data[0x5e]=0x83; /* byte RLE */
     data[0x5f]=0x03;
     mem_t m={data,sizeof data};
-    casio_stream_t source={read_mem,&m,sizeof data};
     cjf_font_t font;
     cjf_stream_t cjfs={read_mem,&m,sizeof data};
     assert(cjf_open(&cjfs,&font)==0);
