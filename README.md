@@ -112,7 +112,7 @@ host artifact or update both `bridge.py` and `exfs.py` before retrying.
 ## Image and CJF preview
 
 In a directory, select a file, press **Sound**, then choose
-**View bitmap** or **Preview CJF font**. EXE still opens the
+**View bitmap**, **Preview CJF font**, or **View RLE565 (528x320)**. EXE still opens the
 hex viewer for arbitrary files. Bitmaps are rendered on the complete
 528x320 screen (cropped/centered at native resolution); **ESC** returns.
 CJF shows an unlabeled-borderless glyph grid, with hexadecimal glyph
@@ -124,7 +124,8 @@ and `src/readers/cjf.{c,h}`, with no gint or OS dependency. The
 application-only `src/preview.c` handles native EX-word file reads
 and gint drawing. Both readers use a caller-defined read-at callback,
 so entire files do not need to be loaded into memory. The bitmap reader
-matches the Casio packed BIN formats 0/1/2/3 from the supplied
+matches Casio packed BIN formats 0/1/2/3 and explicit-dimension
+factory RLE565 runs from the supplied
 `bitmap.py`; it is **not** a decoder for Windows BMP files.
 The CJF reader supports linked ranges, raw glyphs, indexed glyphs,
 and nibble/byte RLE from the supplied `cjf.py`. Unknown CJF
