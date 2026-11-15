@@ -95,7 +95,10 @@ static int search_native(search_t *q)
 
     int close_rc = exword_sys_findclose(handle);
     q->total = index;
-    if(rc != -16) return rc;
+    /* Some EX-word firmwares signal end-of-enumeration with -1 as well
+       as -16. Only a -1 from findfirst() means an empty/unavailable mount;
+       after at least one entry, it is normal EOF. */
+    if(rc != -16 && rc != -1) return rc;
     if(close_rc < 0) return close_rc;
     return q->known_total > 0 && q->rows ? q->known_total : index;
 }
