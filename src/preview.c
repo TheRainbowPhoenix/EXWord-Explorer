@@ -70,7 +70,8 @@ int preview_open(char const *filename, int format)
         if(rc || bitmap.stride>sizeof scratch.row) return -1;
     }
     else if(format==PREVIEW_CJF) {
-        rc=cjf_open(&stream,&font);
+        cjf_stream_t cjfs={read_at,NULL,(uint32_t)size};
+        rc=cjf_open(&cjfs,&font);
         if(rc) return rc;
         if(!font.range_count) return -1;
         if(font.ranges[0].glyph_bytes>sizeof scratch.glyph) return -1;
