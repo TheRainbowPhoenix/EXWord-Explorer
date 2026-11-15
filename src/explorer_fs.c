@@ -92,13 +92,13 @@ int ex_list(const char *directory, int first, ex_entry_t rows[EX_ROWS])
 {
     search_t q = { .directory = directory, .first = first, .rows = rows };
     if(rows) memset(rows, 0, EX_ROWS * sizeof *rows);
-    return gint_world_switch(GINT_CALL(search_native, &q));
+    return gint_world_switch(GINT_CALL(search_native, (void *)&q));
 }
 
 int ex_exists_in(const char *directory, const char *name)
 {
     search_t q = { .directory = directory, .lookfor = name };
-    int rc = gint_world_switch(GINT_CALL(search_native, &q));
+    int rc = gint_world_switch(GINT_CALL(search_native, (void *)&q));
     return rc < 0 ? rc : q.found;
 }
 
@@ -138,7 +138,7 @@ int ex_read(const char *path, int offset, uint8_t *data, int max, int *size)
 {
     io_t q = { .path = path, .offset = offset, .limit = max, .bytes = data };
     if(max < 0 || !size) return -1;
-    int rc = gint_world_switch(GINT_CALL(read_native, &q));
+    int rc = gint_world_switch(GINT_CALL(read_native, (void *)&q));
     if(rc >= 0) *size = q.size;
     return rc;
 }
@@ -160,7 +160,7 @@ static int write_native(io_t *q)
 int ex_write_byte(const char *path, int offset, uint8_t byte)
 {
     io_t q = { .path=path, .offset=offset, .bytes=&byte };
-    return gint_world_switch(GINT_CALL(write_native, &q));
+    return gint_world_switch(GINT_CALL(write_native, (void *)&q));
 }
 
 typedef struct {
@@ -175,7 +175,7 @@ static int create_native(op_t *q)
 int ex_create(const char *path, int directory)
 {
     op_t q = { .a = path, .type = directory ? EX_DIRECTORY : EX_FILE };
-    return gint_world_switch(GINT_CALL(create_native, &q));
+    return gint_world_switch(GINT_CALL(create_native, (void *)&q));
 }
 static int delete_native(op_t *q)
 {
@@ -184,7 +184,7 @@ static int delete_native(op_t *q)
 int ex_delete(const char *path)
 {
     op_t q = { .a = path };
-    return gint_world_switch(GINT_CALL(delete_native, &q));
+    return gint_world_switch(GINT_CALL(delete_native, (void *)&q));
 }
 static int rename_native(op_t *q)
 {
@@ -193,7 +193,7 @@ static int rename_native(op_t *q)
 int ex_rename(const char *from, const char *to)
 {
     op_t q = { .a = from, .b = to };
-    return gint_world_switch(GINT_CALL(rename_native, &q));
+    return gint_world_switch(GINT_CALL(rename_native, (void *)&q));
 }
 
 static int copy_native(op_t *q)
@@ -250,5 +250,5 @@ int ex_copy_file(const char *from, const char *to)
 {
     if(!strcmp(from, to)) return -1;
     op_t q = { .a = from, .b = to };
-    return gint_world_switch(GINT_CALL(copy_native, &q));
+    return gint_world_switch(GINT_CALL(copy_native, (void *)&q));
 }
