@@ -28,4 +28,7 @@ int casio_bitmap_open(casio_stream_t const *file, casio_bitmap_t *bmp);
 int casio_bitmap_render(casio_stream_t const *file,
     casio_bitmap_t const *bmp, uint8_t *row, size_t row_size,
     casio_plot565 plot, void *user);
+/* Factory test format: repeated (u8 count, BE RGB565), explicit dims. */
+int casio_bitmap_render_rle565(casio_stream_t const *file,
+    uint16_t width, uint16_t height, casio_plot565 plot, void *user);
 #endif
