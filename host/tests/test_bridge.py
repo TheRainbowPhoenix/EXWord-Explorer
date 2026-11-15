@@ -11,7 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from exfs import (Filesystem, RemoteError, remote_path,
+from exfs import (Filesystem, RemoteError, CancelledTransfer, remote_path,
                   FxlinkUSB, FxlinkMessage,
                   CMD_LIST, CMD_READ, CMD_CREATE, CMD_WRITE,
                   CMD_DELETE, CMD_RENAME, CMD_STAT, CMD_PING)
@@ -137,6 +137,27 @@ class ProtocolTests(unittest.TestCase):
                              (0, b"EXFS/1"))
         self.assertEqual(usb.fx.freed, 3)
         self.assertEqual(usb.fx.starts, 0)
+
+    def test_cancelled_download_and_upload_cleanup(self):
+        fake = FakeTransport()
+        fs = Filesystem(fake)
+        destination = io.BytesIO()
+        with self.assertRaises(CancelledTransfer):
+            fs.download("/drv0/bin.dat", destination,
+                        cancelled=lambda: True)
+        self.assertEqual(destination.getvalue(), b"")
+        with self.assertRaises(CancelledTransfer):
+            fs.upload("/drv0/cancelled.bin", io.BytesIO(b"abc"),
+                      cancelled=lambda: True)
+        self.assertNotIn("\\\\drv0\\cancelled.bin", fake.files)
+
+    def test_large_read_chunk(self):
+        fake = FakeTransport()
+        fs = Filesystem(fake)
+        fake.files["\\\\drv0\\big"] = bytes(range(256)) * 32
+        size, content = fs.read("/drv0/big", 0, 2048)
+        self.assertEqual(size, 8192)
+        self.assertEqual(len(content), 2048)
 
     def test_file_roundtrip_and_listing(self):
         fake = FakeTransport()
