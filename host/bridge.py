@@ -201,7 +201,7 @@ def gui(filesystem):
     toolbar = ttk.Frame(root, padding=8)
     toolbar.pack(fill="x")
     ttk.Label(toolbar, text="Volume:").pack(side="left")
-    volumes = ttk.Combobox(toolbar, values=sorted(VOLUMES),
+    volumes = ttk.Combobox(toolbar, values=VOLUMES,
                            textvariable=volume, width=7, state="readonly")
     volumes.pack(side="left", padx=6)
     path_label = ttk.Label(toolbar, textvariable=current)
@@ -209,7 +209,7 @@ def gui(filesystem):
     filelist = ttk.Treeview(root, columns=("type", "name"), show="headings",
                             selectmode="browse")
     filelist.heading("type", text="Type")
-    filelist.heading("name", text="Name (hidden files included)")
+    filelist.heading("name", text="Name")
     filelist.column("type", width=105, stretch=False)
     filelist.column("name", width=680)
     filelist.pack(fill="both", expand=True, padx=8)
