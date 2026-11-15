@@ -66,6 +66,33 @@ jobs:
             test -f "$package/fileinfo.cji"
           done
 
+      - name: Build Linux libfxlink and check Python bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p host-dist
+          cc -std=c11 -D_GNU_SOURCE -fPIC -shared -O2 \
+            -I/tmp/fxsdk-src/libfxlink/include -I/tmp/fxsdk-build/include \
+            /tmp/fxsdk-src/libfxlink/defs.c \
+            /tmp/fxsdk-src/libfxlink/devices.c \
+            /tmp/fxsdk-src/libfxlink/filter.c \
+            /tmp/fxsdk-src/libfxlink/logging.c \
+            /tmp/fxsdk-src/libfxlink/protocol.c \
+            -o host-dist/libfxlink.so \
+            $(pkg-config --cflags --libs libusb-1.0) -lm
+          cp host/exfs.py host/bridge.py host-dist/
+          python3 -m compileall -q host
+          python3 -m unittest discover -s host/tests -v
+          python3 host/bridge.py --help >/dev/null
+
+      - name: Upload Linux USB/TFTP host bridge
+        uses: actions/upload-artifact@v4
+        with:
+          name: EXWord-Explorer-host-linux
+          path: host-dist/
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Upload Japanese EX-word installation folder
         uses: actions/upload-artifact@v4
         with:
