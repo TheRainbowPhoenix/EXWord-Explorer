@@ -242,7 +242,7 @@ static void draw_hex(void)
         else snprintf(buf, sizeof buf, "New byte: %02X  EXE save",
             app.pending_byte);
         box_fill(42, 256, 486, 290, C_RGB(25, 30, 27));
-        drect_border(42, 256, 486, 290, C_DARK, C_NONE, 1);
+        dline(42, 256, 486, 256, C_DARK);
         dtext(55, 269, C_BLACK, buf);
     }
     footer(app.editing ? "Q-P 1-0  A-F hex  EXE save  ESC cancel" :
@@ -265,7 +265,8 @@ static void draw_dialog(void)
 {
     if(app.dialog == DIALOG_NONE) return;
     box_fill(30, 65, 497, 267, C_RGB(27, 30, 30));
-    drect(30, 65, 497, 267, C_DARK, 1);
+    dline(30, 65, 497, 65, C_DARK);
+    dline(30, 267, 497, 267, C_DARK);
     if(app.dialog == DIALOG_MENU) {
         dtext(48, 78, C_BLACK, "FILE OPERATIONS");
         for(int i=0; i<ACTION_COUNT; i++) {
