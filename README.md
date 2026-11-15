@@ -6,7 +6,7 @@ This is an **EX-word .d01 add-in**, not a ClassPad .hh3 add-in.
 
 ## Features
 
-- Browse candidate volumes drv0, drv1, drv2, crd0, crd1, crd2, sys0, sys1, rom0, rom1. Unsupported mounts are safely rejected, or shown as empty if the OS reports the same error as an empty directory.
+- Browse candidate volumes drv0, drv1, drv2, data0, crd0, crd1, crd2, sys0, sys1, rom0, rom1. Unsupported mounts are safely rejected, or shown as empty if the OS reports the same error as an empty directory.
 - Directory browsing includes all enumerated filenames, with no extension or hidden-file filtering.
 - Full-screen list, fixed 20-row window; the app does not cache a whole directory.
 - Hex viewer: 12 bytes per row with address, hex and ASCII; 240-byte pages let you browse huge files with little RAM.
@@ -69,7 +69,7 @@ The workflow ensures that explorer.d01 fits the 128 KiB EX-word loader limit.
 
 ## USB remote filesystem (fxlink + local TFTP)
 
-The volume home screen now includes **USB Remote**. This opens a USB
+The volume home screen lists **data0** and **crd0** among the available drives, plus **USB Remote**. This opens a USB
 fxlink bulk interface and runs the EXFS/1 filesystem RPC server. The
 companion desktop app (Python 3.10+, libusb and Tkinter) provides a
 graphical file manager, uploads/downloads and a **localhost-only TFTP
@@ -98,3 +98,13 @@ the previous selection and scroll offset.
 passes offline binary TFTP tests in CI. This does not establish that the
 EX-word USB peripheral can coexist with OS filesystem syscalls in
 practice; please verify on a device, and back up files before writes.
+
+### USB receiver fix and diagnostics
+
+The Python host no longer reopens bulk-IN after receiving a packet.
+The underlying libfxlink callback already resubmits the receiver, so
+trying to start a second receive transfer incorrectly raises a
+`Could not restart fxlink receiver` exception after a successful ping.
+Use `python3 bridge.py --verbose` for USB connection, EXFS request ID,
+reply code and timeout diagnostics (stderr). Re-download the latest
+host artifact or update both `bridge.py` and `exfs.py` before retrying.
