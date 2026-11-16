@@ -9,8 +9,8 @@
 
 #define FILE_COUNT 96
 #define CJF_SIZE 0x4200
-#define IMAGE_W 80
-#define IMAGE_H 58
+#define IMAGE_W 240
+#define IMAGE_H 160
 typedef struct {
     char path[EX_PATH_MAX];
     int directory, used;
