@@ -19,7 +19,7 @@
    No host-supplied path is used without validation. */
 enum {
     EXFS_LIST = 1, EXFS_READ, EXFS_CREATE, EXFS_WRITE, EXFS_DELETE,
-    EXFS_RENAME, EXFS_STAT, EXFS_PING
+    EXFS_RENAME, EXFS_STAT, EXFS_PING, EXFS_BEGIN
 };
 /* USB chunks can be larger than RFC 1350's fixed 512-byte TFTP block.
    2048 balances fewer round trips with the EX-word's limited RAM. */
@@ -43,24 +43,152 @@ static void write32(uint8_t *p, uint32_t n)
     p[0] = n; p[1] = n>>8; p[2] = n>>16; p[3] = n>>24;
 }
 
+
+/* Version-3, error-correction M QR for http://pho3.be/go/exxplorer,
+   generated offline. One 29-bit scanline per uint32_t. */
+static const uint32_t qr_rows[29] = {
+    0x1fcc4e7fu,
+    0x10411c41u,
+    0x17426c5du,
+    0x174d975du,
+    0x174e0c5du,
+    0x10583f41u,
+    0x1fd5557fu,
+    0x000dbc00u,
+    0x12d053a0u,
+    0x04a7bdc9u,
+    0x17c5ef0eu,
+    0x03b393feu,
+    0x107a6acbu,
+    0x1930fba4u,
+    0x0ec9c9c7u,
+    0x16902f2au,
+    0x00f18b2au,
+    0x0b14f4c1u,
+    0x157d7cabu,
+    0x05894b13u,
+    0x16d02ff4u,
+    0x00156317u,
+    0x1fc61952u,
+    0x10516b15u,
+    0x174e11f8u,
+    0x1758ab71u,
+    0x174aff11u,
+    0x1040df22u,
+    0x1fd2b5cau
+};
+typedef struct {
+    char path[EX_PATH_MAX];
+    uint32_t total_bytes, completed, chunk, chunks;
+    int is_write, active, total_known;
+} transfer_status_t;
+static transfer_status_t current;
+static int screen_dirty;
+
+static void qr_draw(void)
+{
+    /* 3 px/modules with a quiet-zone margin; merge horizontal runs so
+       displaying the QR needs far fewer draw calls. */
+    drect(18,57,149,191,C_WHITE);
+    for(int y=0;y<29;y++) {
+        int x=0;
+        while(x<29) {
+            if(!(qr_rows[y] & (1u << (28-x)))) { x++; continue; }
+            int first=x;
+            do { x++; } while(x<29 && (qr_rows[y] & (1u << (28-x))));
+            drect(41+3*first,81+3*y,41+3*x-1,83+3*y,C_BLACK);
+        }
+    }
+}
 static void screen(const char *detail, int count)
 {
-    char text[64];
+    char label[96], shown[57];
     dclear(C_WHITE);
-    drect(0, 0, 527, 32, C_RGB(3, 9, 16));
-    dtext(8, 10, C_WHITE, "USB REMOTE - EXFS/1");
-    dtext(12, 59, C_BLACK, detail);
-    dtext(12, 91, C_DARK, "Connect the host bridge using libfxlink.");
-    dtext(12, 113, C_DARK, "Local TFTP + a desktop filesystem GUI.");
-    dtext(12, 150, C_RED, "Remote writes may alter system files.");
-    dtext(12, 180, C_BLACK, "Only expose the host TFTP service on 127.0.0.1.");
-    snprintf(text, sizeof text, "%d requests served", count);
-    dtext(12, 215, C_BLACK, text);
-    drect(0, 281, 527, 319, C_RGB(3, 9, 16));
-    dtext(8, 291, C_WHITE, "ESC / AC-ON : stop USB");
-    drect(367, 284, 522, 317, C_RGB(17, 25, 25));
-    dtext(385, 297, C_WHITE, "STOP USB");
+    drect(0,0,527,38,C_RGB(4,12,23));
+    dtext(14,13,C_WHITE,"USB REMOTE");
+    snprintf(label,sizeof label,"%d req",count);
+    dtext(447,13,C_WHITE,label);
+
+    qr_draw();
+    dtext(25,203,C_DARK,"Scan to set up");
+
+    dtext(171,53,C_DARK,"CONNECTION");
+    dtext(171,73,C_BLACK,detail);
+    dtext(171,105,C_DARK,"PC TFTP ADDRESS");
+    dtext(171,125,C_BLACK,"127.0.0.1:6969");
+    dtext(171,151,C_BLUE,"pho3.be/go/exxplorer");
+
+    drect(169,181,518,275,C_RGB(28,30,31));
+    dtext(181,190,C_DARK,current.active ?
+        (current.is_write ? "RECEIVING FILE" : "SENDING FILE") :
+        "TRANSFER");
+    if(current.active) {
+        /* Native paths are often Shift-JIS; show a bounded safe ASCII tail. */
+        size_t n=strlen(current.path), start=n>43 ? n-43 : 0;
+        int j=0;
+        if(start) { shown[j++]='.'; shown[j++]='.'; }
+        for(size_t i=start;i<n && j<(int)sizeof shown-1;i++) {
+            unsigned char c=(unsigned char)current.path[i];
+            shown[j++]=(c>=32 && c<127) ? c : '?';
+        }
+        shown[j]=0;
+        dtext(181,209,C_BLACK,shown);
+    }
+    else dtext(181,209,C_DARK,"Waiting for a file transfer");
+
+    drect(181,235,506,249,C_LIGHT);
+    if(current.active && current.total_known && current.total_bytes) {
+        uint32_t done=current.completed;
+        if(done>current.total_bytes) done=current.total_bytes;
+        int filled=(int)((uint64_t)done*326u/current.total_bytes);
+        if(filled>0) drect(181,235,180+filled,249,C_BLUE);
+    }
+    if(current.active) {
+        if(current.chunks)
+            snprintf(label,sizeof label,"%lu / %lu chunks",
+                (unsigned long)current.chunk,(unsigned long)current.chunks);
+        else snprintf(label,sizeof label,"Chunk %lu / ?",
+                (unsigned long)current.chunk);
+        dtext(181,258,C_DARK,label);
+    }
+    drect(0,281,527,319,C_RGB(4,12,23));
+    dtext(12,296,C_WHITE,"ESC / AC-ON / SOUND");
+    drect(370,285,518,315,C_RGB(24,28,31));
+    dtext(391,296,C_WHITE,"STOP USB");
     dupdate();
+}
+
+static void transfer_begin(const char *path, int write,
+    uint32_t total, int total_known)
+{
+    snprintf(current.path,sizeof current.path,"%s",path);
+    current.is_write=write;
+    current.active=1;
+    current.total_bytes=total;
+    current.total_known=total_known;
+    current.completed=0;
+    current.chunk=0;
+    current.chunks=total_known ?
+        (total+EXFS_DATA_MAX-1)/EXFS_DATA_MAX : 0;
+    screen_dirty=1;
+}
+static void transfer_update(const char *path, int write,
+    uint32_t offset, uint32_t transferred, uint32_t file_size)
+{
+    if(!current.active || strcmp(current.path,path) ||
+       current.is_write!=write) {
+        transfer_begin(path,write,write ? 0 : file_size,!write);
+    }
+    current.chunk=offset/EXFS_DATA_MAX+1;
+    current.completed=offset+transferred;
+    if(!write && !current.total_known) {
+        current.total_bytes=file_size;
+        current.total_known=1;
+        current.chunks=(file_size+EXFS_DATA_MAX-1)/EXFS_DATA_MAX;
+    }
+    if(current.chunk==1 || (current.chunk&3)==0 ||
+       (current.chunks && current.chunk>=current.chunks))
+        screen_dirty=1;
 }
 
 /* Validate a native EX-word path without ever accepting a relative path,
@@ -157,7 +285,12 @@ static int dispatch(uint8_t const *data, int size)
     uint8_t const *payload=data+14+path_size;
     int remaining=size-14-path_size;
 
-    if(cmd==EXFS_PING) {
+    if(cmd==EXFS_BEGIN && remaining==0 && amount==0 &&
+        offset<=0x7fffffff) {
+        transfer_begin(path,!!(flags&1),offset,offset!=0);
+        status=0;
+    }
+    else if(cmd==EXFS_PING) {
         status=0;
         memcpy(body, "EXFS/1", 6);
         body_size=6;
@@ -190,7 +323,11 @@ static int dispatch(uint8_t const *data, int size)
         if(amount>EXFS_DATA_MAX) amount=EXFS_DATA_MAX;
         int n=ex_read(path, (int)offset, body, amount, &total);
         if(n<0) status=n;
-        else { status=0; body_size=n; }
+        else {
+            status=0;
+            body_size=n;
+            if(n>0) transfer_update(path,0,offset,n,total);
+        }
     }
     else if(cmd==EXFS_STAT) {
         uint8_t dummy=0;
@@ -203,7 +340,10 @@ static int dispatch(uint8_t const *data, int size)
     else if(cmd==EXFS_WRITE && amount<=EXFS_DATA_MAX && remaining==amount &&
         offset<=0x7fffffff && offset+(uint32_t)amount<=0x7fffffff) {
         status=ex_remote_write(path, (int)offset, payload, amount);
-        if(status==amount) status=0;
+        if(status==amount) {
+            if(amount) transfer_update(path,1,offset,amount,0);
+            status=0;
+        }
         else if(status>=0) status=-1;
     }
     else if(cmd==EXFS_DELETE && remaining==0) {
@@ -234,6 +374,8 @@ void ex_usb_remote_screen(void)
     }
 
     int served=0, active=-1;
+    memset(&current,0,sizeof current);
+    screen_dirty=0;
     ex_fs_usb_mode(1);
     screen("Waiting for USB connection...", 0);
     for(;;) {
@@ -279,9 +421,11 @@ void ex_usb_remote_screen(void)
         }
         if(dispatch(request, got)) {
             served++;
-            /* Refreshing the LCD for every USB packet can dominate small
-               transfers; show progress periodically instead. */
-            if((served & 15) == 0) screen("USB connected - remote filesystem ready", served);
+            /* Render transfer milestones, not every USB packet. */
+            if(screen_dirty || (served&31)==0) {
+                screen("Connected to computer",served);
+                screen_dirty=0;
+            }
         }
     }
     screen("Stopping USB...", served);
