@@ -71,6 +71,41 @@ jobs:
             test -f "$package/fileinfo.cji"
           done
 
+      - name: Build experimental standalone UPDADN2 image
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S updater -B build-updater \
+            -DCMAKE_TOOLCHAIN_FILE=/tmp/fxsdk-exword/lib/cmake/fxsdk/EXWORD.cmake \
+            -DCMAKE_MODULE_PATH=/tmp/fxsdk-exword/lib/cmake/fxsdk
+          cmake --build build-updater --parallel 2
+          python3 - <<'PY'
+          import struct
+          import subprocess
+          from pathlib import Path
+          p=Path("build-updater/UPDADN2.BIN")
+          image=p.read_bytes()
+          assert image.startswith(b"CASIO CY10x ADDIN MODULE FOR RELEASE ROM\0")
+          assert struct.unpack_from(">II",image,48)==(0x8c18ff80,0x8c190000)
+          assert 128 < len(image) < 1048576
+          elf=Path("build-updater/explorer_upd")
+          head=subprocess.check_output(["sh-elf-readelf","-h",str(elf)],text=True)
+          assert "0x8c190000" in head
+          symbols=subprocess.check_output(["sh-elf-nm","-a",str(elf)],text=True)
+          for forbidden in ["exword_sys_write","exword_sys_create",
+              "exword_sys_delete","exword_sys_sdformat","exword_sys_write2"]:
+              assert forbidden not in symbols, forbidden
+          print("UPDADN2 header, entry point and no-write checks passed")
+          PY
+
+      - name: Upload experimental standalone test-menu browser
+        uses: actions/upload-artifact@v4
+        with:
+          name: EXWord-Explorer-UPDADN2-experimental
+          path: build-updater/UPDADN2.BIN
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Build Linux libfxlink and check Python bridge
         shell: bash
         run: |
