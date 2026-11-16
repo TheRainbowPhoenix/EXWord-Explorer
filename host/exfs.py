@@ -17,7 +17,7 @@ from pathlib import Path
 
 REQUEST = struct.Struct("<IIHHBB")
 RESPONSE = struct.Struct("<IiI")
-CMD_LIST, CMD_READ, CMD_CREATE, CMD_WRITE, CMD_DELETE, CMD_RENAME, CMD_STAT, CMD_PING = range(1, 9)
+CMD_LIST, CMD_READ, CMD_CREATE, CMD_WRITE, CMD_DELETE, CMD_RENAME, CMD_STAT, CMD_PING, CMD_BEGIN = range(1, 10)
 MAX_CHUNK = 2048  # USB EXFS chunk, independent of 512-byte TFTP DATA packets
 VOLUMES = ("drv0", "sys0", "data0", "data1", "data2",
            "crd0", "crd1", "crd2")
@@ -279,6 +279,17 @@ class Filesystem:
         size, _ = self.command(CMD_STAT, path)
         return size
 
+    def begin_transfer(self, path, size, writing=False):
+        """Announce byte total so the EX-word can draw accurate progress.
+        Legacy EXFS/1 endpoints may not implement command 9; the updated
+        device package is required for the progress dashboard.
+        """
+        if size is None:
+            size = 0
+        if not 0 <= size < 2**31:
+            raise ValueError("File too large for EX-word transfer counter")
+        self.command(CMD_BEGIN, path, offset=size, flags=int(writing))
+
     def read(self, path, offset, length=512):
         size, content = self.command(CMD_READ, path, offset,
                                      min(length, MAX_CHUNK))
@@ -286,6 +297,7 @@ class Filesystem:
 
     def download(self, path, target, progress=None, cancelled=None):
         total = self.stat(path)
+        self.begin_transfer(path, total, writing=False)
         count = 0
         if progress:
             progress(0, total)
@@ -306,6 +318,14 @@ class Filesystem:
         if cancelled and cancelled():
             raise CancelledTransfer("Upload cancelled")
         self.command(CMD_CREATE, path)
+        try:
+            self.begin_transfer(path, size, writing=True)
+        except Exception:
+            try:
+                self.remove(path)
+            except Exception:
+                pass
+            raise
         done = 0
         if progress:
             progress(0, size)
