@@ -131,6 +131,58 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  simulator:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install SDL2 build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev
+      - name: Build the real Explorer UI against NCInput SDL mocks
+        run: |
+          cmake -S simulator -B build-sim -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-sim --parallel 2
+      - name: Capture 528x320 Explorer mock screens
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+        run: |
+          mkdir -p build-sim/screenshots
+          ./build-sim/explorer_sim --screenshots build-sim/screenshots
+          python3 simulator/bmp_to_png.py build-sim/screenshots
+      - name: Check screenshot metadata and serialize for docs
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+          folder=Path("build-sim/screenshots")
+          names=["home","directory","hex-viewer","hex-options",
+                 "font-grid","bitmap","usb-remote"]
+          for name in names:
+              data=(folder/f"{name}.png").read_bytes()
+              assert data.startswith(b"\x89PNG\r\n\x1a\n")
+              assert struct.unpack(">II",data[16:24])==(528,320)
+          print("Seven simulator screens passed format and dimension assertions")
+          PY
+      - name: Upload simulator screenshots and binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: EXWord-Explorer-simulator-linux
+          path: |
+            build-sim/explorer_sim
+            build-sim/screenshots/*.png
+          if-no-files-found: error
+          retention-days: 14
+      - name: Export reproducible screenshot PNGs for README
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          for image in build-sim/screenshots/*.png; do
+            name="$(basename "$image" .png)"
+            printf 'SIM_PNG:%s:' "$name"
+            base64 -w 0 "$image"
+            printf '\n'
+          done
+
   host-windows:
     runs-on: windows-latest
     defaults:
