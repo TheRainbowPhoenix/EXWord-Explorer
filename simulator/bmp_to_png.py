@@ -17,19 +17,26 @@ def convert(src: Path, dst: Path):
     width, height = struct.unpack_from("<ii", raw, 18)
     planes, bpp = struct.unpack_from("<HH", raw, 26)
     compression = struct.unpack_from("<I", raw, 30)[0]
-    if (width, abs(height), planes, bpp) != (528, 320, 1, 16) or compression not in (0,3):
-        raise ValueError(f"{src}: unexpected EX-word pixel layout")
-    pitch = (width*2+3)&~3
+    if (width, abs(height), planes) != (528, 320, 1) or (
+            bpp not in (16, 24, 32) or compression not in (0, 3)):
+        raise ValueError(f"{src}: unexpected EX-word pixel layout: "
+                         f"{width}x{height} planes={planes} bpp={bpp} compression={compression}")
+    pitch = (width*(bpp//8)+3)&~3
     pixels = bytearray()
     for y in range(abs(height)):
         origin = offset + (abs(height)-1-y if height>0 else y)*pitch
         pixels.append(0)  # PNG filter 0
         for x in range(width):
-            value = struct.unpack_from("<H",raw,origin+2*x)[0]
-            r=(value>>11)&31
-            g=(value>>5)&63
-            b=value&31
-            pixels.extend(((r*255+15)//31,(g*255+31)//63,(b*255+15)//31))
+            if bpp == 16:
+                value = struct.unpack_from("<H",raw,origin+2*x)[0]
+                r=(value>>11)&31
+                g=(value>>5)&63
+                b=value&31
+                pixels.extend(((r*255+15)//31,(g*255+31)//63,(b*255+15)//31))
+            else:
+                step=bpp//8
+                b,g,r=raw[origin+x*step:origin+x*step+3]
+                pixels.extend((r,g,b))
     compressed=zlib.compress(bytes(pixels),9)
     signature=b"\x89PNG\r\n\x1a\n"
     ihdr=struct.pack(">IIBBBBB",width,abs(height),8,2,0,0,0)
