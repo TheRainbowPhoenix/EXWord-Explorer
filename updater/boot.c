@@ -141,6 +141,14 @@ static const char *const volumes[]={
     "drv0","sys0","data0","data1","data2","crd0","crd1","crd2"
 };
 
+/* Freestanding build: no C runtime is available at the test-menu entry. */
+void *memset(void *dst,int value,unsigned n)
+{
+    volatile u8 *p=(volatile u8 *)dst;
+    while(n--) *p++=(u8)value;
+    return dst;
+}
+
 static unsigned slen(const char *s) { unsigned n=0;while(s[n])n++;return n; }
 static void copy(char *out, const char *in,unsigned max)
 {
