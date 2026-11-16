@@ -116,7 +116,7 @@ static void screen(const char *detail, int count)
     dtext(171,73,C_BLACK,detail);
     dtext(171,105,C_DARK,"PC TFTP ADDRESS");
     dtext(171,125,C_BLACK,"127.0.0.1:6969");
-    dtext(171,151,C_BLUE,"pho3.be/go/exxplorer");
+    dtext(171,151,C_BLUE,"http://pho3.be/go/exxplorer");
 
     drect(169,181,518,275,C_RGB(28,30,31));
     dtext(181,190,C_DARK,current.active ?
