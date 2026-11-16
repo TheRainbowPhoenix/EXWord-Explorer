@@ -81,6 +81,57 @@ static void font_fixture(void)
     be32(data+0x14,0x10); /* cyclic linked list */
     assert(cjf_open(&cjfs,&font)<0);
 }
+
+/* Reduced synthetic fixture with sb24f.cjf's real layout: encoding 9,
+   256 physical slots, logical 0x8020..0x80ff (224 codes), and leading
+   empty glyph slots. We do NOT redistribute the original font artwork. */
+static void test_cjf_encoding9(void)
+{
+    static uint8_t data[0x400];
+    memset(data,0,sizeof data);
+    memcpy(data,"CJF",3);
+    be32(data+4,0x10);
+    be16(data+8,24);
+
+    /* Linked ranges at 0x10 and 0x60. */
+    be32(data+0x10+4,0x60);
+    be32(data+0x10+8,0x80200000);
+    be32(data+0x10+12,0x80ff0000);
+    be16(data+0x10+0x18,1);
+    be16(data+0x10+0x1a,8);
+    be16(data+0x10+0x1c,1);
+    data[0x10+0x2e]=9;
+    data[0x10+0x38]=255;
+    be32(data+0x10+0x34,0x200);
+
+    be32(data+0x60+4,0xffffffff);
+    be32(data+0x60+8,0xa0200000);
+    be32(data+0x60+12,0xa0ff0000);
+    be16(data+0x60+0x18,1);
+    be16(data+0x60+0x1a,8);
+    be16(data+0x60+0x1c,1);
+    data[0x60+0x2e]=9;
+    data[0x60+0x38]=255;
+    be32(data+0x60+0x34,0x300);
+
+    data[0x200+34]=0x80;
+    data[0x300+65]=0xf0;
+
+    mem_t mem={data,sizeof data};
+    cjf_stream_t stream={read_mem,&mem,sizeof data};
+    cjf_font_t font;
+    assert(cjf_open(&stream,&font)==0);
+    assert(font.range_count==2);
+    assert(font.ranges[0].encoding==9);
+    assert(font.ranges[0].count==256);
+    assert(font.ranges[1].count==256);
+    uint8_t pixel=0xff;
+    assert(cjf_read_glyph(&font,0,0,&pixel,1)==0 && pixel==0);
+    assert(cjf_read_glyph(&font,0,34,&pixel,1)==0 && pixel==0x80);
+    assert(cjf_read_glyph(&font,1,65,&pixel,1)==0 && pixel==0xf0);
+    assert(cjf_read_glyph(&font,1,256,&pixel,1)<0);
+}
+
 int main(void)
 {
     static const uint8_t mono[]={0x00,0x09,0x00,0x02,0x80,0x80,0x40,0x00};
@@ -109,6 +160,7 @@ int main(void)
     assert(out.count==3 && out.pixels[0]==0xf800 &&
            out.pixels[1]==0xf800 && out.pixels[2]==0x07e0);
     font_fixture();
+    test_cjf_encoding9();
     puts("All standalone Casio bitmap/CJF parser tests passed");
     return 0;
 }
