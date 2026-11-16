@@ -171,7 +171,9 @@ class ProtocolTests(unittest.TestCase):
         binary = io.BytesIO()
         fs.download("/drv0/bin.dat", binary)
         self.assertEqual(binary.getvalue(), fake.files["\\\\drv0\\bin.dat"])
-        fs.upload("/drv0/new.dat", io.BytesIO(b"\x00\xff" * 1024))
+        self.assertIn((CMD_BEGIN, "\\\\drv0\\bin.dat"), fake.calls)
+        fs.upload("/drv0/new.dat", io.BytesIO(b"\x00\xff" * 1024), size=2048)
+        self.assertIn((CMD_BEGIN, "\\\\drv0\\new.dat"), fake.calls)
         self.assertEqual(fake.files["\\\\drv0\\new.dat"], b"\x00\xff" * 1024)
         with self.assertRaises(RemoteError):
             fs.upload("/drv0/new.dat", io.BytesIO(b"overwrite"))
