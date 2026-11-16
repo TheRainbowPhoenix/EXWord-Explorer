@@ -23,12 +23,14 @@ Download the current add-in and companion app from [GitHub Actions](https://gith
 ![USB Remote screen](docs/screenshots/usb-remote.png)
 
 ### EXWord-E and Non-Dataplus models
-An experimental `UPDADN2.BIN` is also built.
-It is a separate, read-only test-menu browser with a simple hex view.
-It does not have all the features of the normal add-in.
-It might run on some EX-word E models without DATAPLUS through the Test Menu option **OS Update from SD card**.
-This is not confirmed on real EX-word E hardware.
-Do not try it without a full backup and a reliable recovery method.
+Two experimental `UPDADN2.BIN` builds are available.
+The small version is a read-only file and hex browser.
+The full version contains the normal Explorer app, including USB and file editing.
+The full version needs the OS RAM mapping and system calls to work.
+The Test Menu **OS Update from SD card** might load it on some non-DATAPLUS EX-word E models.
+This has not been tested on real E hardware.
+The Test Menu could modify firmware or make a device unusable.
+Do not use either file without a complete backup and a proven recovery method.
 
 ## 日本語
 
@@ -45,13 +47,13 @@ USB Remote を開くと、パソコンからファイルを操作できます。
 Windows と Linux 用のアプリでファイルを送受信できます。
 アプリと EX-word 用ファイルは [GitHub Actions](https://github.com/TheRainbowPhoenix/EXWord-Explorer/actions) から入手できます。
 
-実験用の `UPDADN2.BIN` もあります。
-これは読み取り専用の簡易ブラウザーです。
-通常のアドインの全機能はありません。
-DATAPLUS ではない EX-word E シリーズでも、テストメニューの「SD カードから OS Update」で起動できる可能性があります。
-実機での動作確認はまだできていません。
-このプログラムには書き込みやフラッシュ操作の命令がありません。
-ただし、テストメニューが更新ファイルを読み込む際にファームウェアを変更する可能性があります。
+実験用の `UPDADN2.BIN` は2種類あります。
+小さい版は読み取り専用のファイルブラウザーです。
+フル版には通常の Explorer と USB とファイル編集の機能が入っています。
+フル版には OS の RAM マッピングとシステムコールが必要です。
+DATAPLUS ではない EX-word E シリーズのテストメニュー「SD カードから OS Update」で動く可能性があります。
+E シリーズの実機では確認していません。
+テストメニューで本体のファームウェアが変更されたり、起動できなくなる危険があります。
 完全なバックアップと復旧手段がない場合は使用しないでください。
 
 ## 简体中文
@@ -69,11 +71,11 @@ EXWord Explorer 是 CASIO EX-word 电子词典的文件浏览器。
 Windows 和 Linux 客户端可以发送和接收文件。
 可以从 [GitHub Actions](https://github.com/TheRainbowPhoenix/EXWord-Explorer/actions) 下载程序。
 
-另外提供实验版 `UPDADN2.BIN`。
-它是独立的只读浏览器，只提供简单的十六进制查看。
-它不包含普通插件的全部功能。
+实验版 `UPDADN2.BIN` 有两个版本。
+精简版只能读取文件并用十六进制查看。
+完整版包含普通 Explorer、USB 和文件编辑功能。
+完整版需要系统 RAM 映射和系统调用才能运行。
 部分非 DATAPLUS 的 EX-word E 机型可能可以通过测试菜单中的 **从 SD 卡进行 OS Update** 启动它。
-目前没有在 EX-word E 真机上验证。
-这个程序不包含文件写入或固件刷写命令。
-但是，测试菜单在加载更新文件时仍可能修改固件。
+目前没有在 E 系列真机上验证。
+测试菜单可能修改固件，甚至导致设备无法启动。
 没有完整备份和可靠恢复方法时，请勿尝试。
