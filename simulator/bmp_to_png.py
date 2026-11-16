@@ -59,6 +59,46 @@ def main():
     if missing:
         raise AssertionError(f"Missing screenshots: {sorted(missing)}")
     print("Seven real-UI mock screenshots validated")
+    # Inspect rendered pixels as well as file headers. This catches a blank
+    # or misplaced screen even when the SDL program exits with status 0.
+    for name in sorted(required):
+        data=(folder/f"{name}.png").read_bytes()
+        p=8
+        chunks=[]
+        while p<len(data):
+            n=struct.unpack_from(">I",data,p)[0]
+            tag=data[p+4:p+8]
+            if tag==b"IDAT":
+                chunks.append(data[p+8:p+8+n])
+            p+=12+n
+        rgb=zlib.decompress(b"".join(chunks))
+        stride=528*3+1
+        assert len(rgb)==320*stride
+        assert all(rgb[y*stride]==0 for y in range(320))
+        colors=set()
+        nonwhite=0
+        for y in range(320):
+            start=y*stride+1
+            row=rgb[start:start+528*3]
+            for x in range(0,len(row),3):
+                c=bytes(row[x:x+3])
+                colors.add(c)
+                nonwhite+=c!=b"\\xff\\xff\\xff"
+        assert len(colors)>=3 and nonwhite>1200, (
+            f"{name}: blank or nearly blank mock page")
+        if name=="bitmap":
+            assert len(colors)>1000, "Bitmap preview did not render its colors"
+        if name=="font-grid":
+            assert b"\\x00\\x00\\x00" in colors, "CJF preview lacks glyphs"
+        if name=="usb-remote":
+            black=0
+            for y in range(81,168):
+                for x in range(41,128):
+                    pixel=rgb[y*stride+1+3*x:y*stride+1+3*x+3]
+                    if pixel==b"\\x00\\x00\\x00":
+                        black+=1
+            assert black>1500, "The USB QR code is missing"
+    print("Seven simulated pages have nonempty real pixel content")
 
 if __name__=="__main__":
     main()
