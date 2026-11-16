@@ -12,14 +12,6 @@ Open USB Remote to browse files from the computer.
 The Windows and Linux companion app can send and receive files.
 Download the current add-in and companion app from [GitHub Actions](https://github.com/TheRainbowPhoenix/EXWord-Explorer/actions).
 
-The SDL simulator shows the same Explorer screens with example files.
-Run `cmake -S simulator -B build-sim` and `cmake --build build-sim` after installing SDL2.
-Run `./build-sim/explorer_sim --interactive` for the desktop demo.
-Run `./build-sim/explorer_sim --screenshots build-sim/screenshots` to capture the example screens.
-The simulator changes only its own example files.
-Its SDL renderer is adapted from [NCInput_gint](https://github.com/TheRainbowPhoenix/NCInput_gint/tree/port-cinput-to-cpp-6161395050579246813).
-On Windows, download the simulator-windows artifact and run `explorer_sim.exe`.
-
 ![EX-word drive selection](docs/screenshots/home.png)
 
 ![File browser](docs/screenshots/directory.png)
@@ -30,14 +22,12 @@ On Windows, download the simulator-windows artifact and run `explorer_sim.exe`.
 
 ![USB Remote screen](docs/screenshots/usb-remote.png)
 
+### EXWord-E and Non-Dataplus models
 An experimental `UPDADN2.BIN` is also built.
 It is a separate, read-only test-menu browser with a simple hex view.
 It does not have all the features of the normal add-in.
 It might run on some EX-word E models without DATAPLUS through the Test Menu option **OS Update from SD card**.
 This is not confirmed on real EX-word E hardware.
-It needs a firmware filesystem service that might not exist in the test menu.
-The program contains no filesystem write or flash commands.
-The test menu may still modify firmware when it loads an update file.
 Do not try it without a full backup and a reliable recovery method.
 
 ## 日本語
@@ -54,12 +44,6 @@ ESC キーで前の画面に戻ります。
 USB Remote を開くと、パソコンからファイルを操作できます。
 Windows と Linux 用のアプリでファイルを送受信できます。
 アプリと EX-word 用ファイルは [GitHub Actions](https://github.com/TheRainbowPhoenix/EXWord-Explorer/actions) から入手できます。
-
-SDL シミュレーターでは、サンプルファイルを使って画面を試せます。
-上の画像はシミュレーターで撮影したものです。
-シミュレーターは実機のファイルを変更しません。
-SDL 描画は [NCInput_gint](https://github.com/TheRainbowPhoenix/NCInput_gint/tree/port-cinput-to-cpp-6161395050579246813) を元にしています。
-Windows では simulator-windows をダウンロードし、`explorer_sim.exe` を実行します。
 
 実験用の `UPDADN2.BIN` もあります。
 これは読み取り専用の簡易ブラウザーです。
@@ -84,12 +68,6 @@ EXWord Explorer 是 CASIO EX-word 电子词典的文件浏览器。
 打开 USB Remote 后，可以在电脑上管理文件。
 Windows 和 Linux 客户端可以发送和接收文件。
 可以从 [GitHub Actions](https://github.com/TheRainbowPhoenix/EXWord-Explorer/actions) 下载程序。
-
-SDL 模拟器使用示例文件展示真实的 Explorer 界面。
-上面的截图来自模拟器。
-模拟器不会修改电子词典中的文件。
-SDL 显示代码基于 [NCInput_gint](https://github.com/TheRainbowPhoenix/NCInput_gint/tree/port-cinput-to-cpp-6161395050579246813)。
-在 Windows 上下载 simulator-windows，然后运行 `explorer_sim.exe`。
 
 另外提供实验版 `UPDADN2.BIN`。
 它是独立的只读浏览器，只提供简单的十六进制查看。
