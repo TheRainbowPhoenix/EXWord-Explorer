@@ -60,8 +60,8 @@ Request header has:
   u16 length
   u16 native_path_length
   u8  command (1 LIST, 2 READ, 3 CREATE, 4 WRITE, 5 DELETE,
-               6 RENAME, 7 STAT, 8 PING)
-  u8  flags (CREATE bit 0 = folder)
+               6 RENAME, 7 STAT, 8 PING, 9 BEGIN)
+  u8  flags (CREATE bit 0 = folder, BEGIN bit 0 = uploading)
   followed by native path bytes and, for WRITE/RENAME, payload bytes.
 
 Response header has u32 request_id, i32 status, u32 total, followed
@@ -69,7 +69,10 @@ by response bytes. status < 0 indicates a native filesystem error.
 total is directory entry count for LIST, file size for STAT/READ.
 LIST entries are [u8 is_directory, u8 name_length, name_bytes...].
 EXFS request data chunks are limited to 2048 bytes; messages include
-the path and header in addition to that data. Native
+the path and header in addition to that data. BEGIN uses the offset
+field as the complete transfer size (bytes), length 0, and the path
+being transferred; a size of 0 means unknown total. READ and WRITE
+responses then advance the progress shown on the device screen. Native
 paths must start with a valid volume (drv0/data0/crd0/sys0/etc).
 
 ## Security and hardware limitations
@@ -136,3 +139,19 @@ The device and host list the eight registered backends in this order:
 `crd2`. The native `findfirst` error -1 is interpreted as an empty
 folder in the browser; access restrictions on protected volumes are not
 bypassed.
+
+## USB dashboard and Windows scrollbars
+
+The landscape EX-word USB screen includes a QR code opening
+**http://pho3.be/go/exxplorer**, the PC-side TFTP endpoint
+`127.0.0.1:6969`, request counter, file path, and current file progress
+(`12 / 52 chunks`, for example). The device itself does not provide
+an FTP server or an IP address; the TFTP bridge runs on the computer.
+A new EXFS `BEGIN` request (opcode 9) announces a transfer's size and
+direction before streaming. For classic TFTP WRQ clients with no size
+information, the display shows the current chunk with an unknown total.
+
+The Tkinter GUI now includes both a vertical directory-list scrollbar
+and a horizontal scrollbar for long filenames. On Windows, update
+`bridge.py` and `exfs.py` together with the device add-in: the
+on-device transfer dashboard needs support for BEGIN in both ends.
