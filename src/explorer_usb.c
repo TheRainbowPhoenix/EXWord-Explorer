@@ -52,6 +52,37 @@ static void screen(const char *detail, int count)
     usb_screen_draw(detail,count,&current);
 }
 
+static void transfer_begin(const char *path, int write,
+    uint32_t total, int known)
+{
+    snprintf(current.path,sizeof current.path,"%s",path);
+    current.is_write=write;
+    current.active=1;
+    current.total_bytes=total;
+    current.total_known=known;
+    current.completed=0;
+    current.chunk=0;
+    current.chunks=known ? (total+EXFS_DATA_MAX-1)/EXFS_DATA_MAX : 0;
+    screen_dirty=1;
+}
+static void transfer_update(const char *path, int write,
+    uint32_t offset, uint32_t transferred, uint32_t file_size)
+{
+    if(!current.active || strcmp(current.path,path) ||
+       current.is_write!=write)
+        transfer_begin(path,write,write ? 0 : file_size,!write);
+    current.chunk=offset/EXFS_DATA_MAX+1;
+    current.completed=offset+transferred;
+    if(!write && !current.total_known) {
+        current.total_bytes=file_size;
+        current.total_known=1;
+        current.chunks=(file_size+EXFS_DATA_MAX-1)/EXFS_DATA_MAX;
+    }
+    if(current.chunk==1 || (current.chunk&3)==0 ||
+       (current.chunks && current.chunk>=current.chunks))
+        screen_dirty=1;
+}
+
 /* Validate a native EX-word path without ever accepting a relative path,
    dot traversal, or slash aliases. Keep Shift-JIS trailing bytes opaque. */
 static int valid_path(char const *path)
