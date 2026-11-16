@@ -117,12 +117,12 @@ jobs:
           python3 updater/full/pack_full.py \
             --stub build-updater-full/fullboot.bin \
             --elf build-exword/explorer \
-            --out build-updater-full/UPDADN2-FULL.BIN
+            --out build-updater-full/UPDADN2.BIN
           python3 - <<'PY'
           from pathlib import Path
           import struct
           stub=Path("build-updater-full/fullboot.bin").read_bytes()
-          image=Path("build-updater-full/UPDADN2-FULL.BIN").read_bytes()
+          image=Path("build-updater-full/UPDADN2.BIN").read_bytes()
           assert len(stub)==0x1080
           assert image[:0x80]==stub[:0x80]
           assert struct.unpack_from(">II", image, 48)==(0x8c18ff80,0x8c190000)
@@ -131,14 +131,16 @@ jobs:
           assert image[0x1080:0x1100]==bytes(128)
           assert len(image)==0x1100+size
           assert 0x1000<size<=0x20000
-          print("Full UPDADN2 image embeds entire native gint EXWord Explorer",size)
+          assert b"USB REMOTE" in image[0x1100:]
+          assert b"Preview as bitmap" in image[0x1100:]
+          print("Full UPDADN2 embeds native gint Explorer, USB and bitmap options",size)
           PY
 
       - name: Upload full Explorer UPDADN2 (EXPERIMENTAL - DO NOT FLASH)
         uses: actions/upload-artifact@v4
         with:
-          name: EXWord-Explorer-UPDADN2-FULL-UNTESTED
-          path: build-updater-full/UPDADN2-FULL.BIN
+          name: EXWord-Explorer-FULL-UPDADN2-UNTESTED
+          path: build-updater-full/UPDADN2.BIN
           if-no-files-found: error
           retention-days: 14
 
