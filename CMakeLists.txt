@@ -14,6 +14,7 @@ add_executable(explorer
   src/main.c
   src/explorer_fs.c
   src/explorer_usb.c
+  src/usb_screen.c
   src/preview.c
   src/readers/casio_bitmap.c
   src/readers/cjf.c
