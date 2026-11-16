@@ -78,12 +78,40 @@ int cjf_open(cjf_stream_t const *file, cjf_font_t *font)
             r->glyph_bytes < ((r->width+7)/8)*r->height ||
             r->data_offset>=file->size ||
             r->last<r->first) return -1;
-        int32_t first=code_rank(r,r->first);
-        int32_t last=code_rank(r,r->last);
-        if(first<0 || last<first) return -3;
-        r->count=(uint32_t)(last-first)+1;
         font->range_count++;
         pos=be32(raw+4);
+    }
+    /* Count physical glyph slots from the file structure, not solely from
+       the character encoding. Some real CJF fonts (sb24f.cjf, encoding 9)
+       have 256 stored glyphs but only 224 encoded character values, with
+       leading blank slots that are not part of the logical range.
+       For indexed tables, retain a known logical count to avoid treating
+       compressed glyph payloads as additional table entries. */
+    for(int i=0; i<font->range_count; i++) {
+        cjf_range_t *r=&font->ranges[i];
+        uint32_t end=file->size;
+        for(int j=0;j<font->range_count;j++) {
+            uint32_t next=font->ranges[j].data_offset;
+            if(next>r->data_offset && next<end) end=next;
+        }
+        uint32_t unit=r->indexed ? 4u : (uint32_t)r->glyph_bytes;
+        uint32_t physical=(end-r->data_offset)/unit;
+        int32_t first=code_rank(r,r->first);
+        int32_t last=code_rank(r,r->last);
+        uint32_t logical=first>=0 && last>=first ?
+            (uint32_t)(last-first)+1 : 0;
+        if(r->indexed && logical) r->count=logical < physical ?
+            logical : physical;
+        else if(r->indexed && !logical) {
+            /* An unknown indexed encoding lacks a reliable table length:
+               the low-byte span is an upper bound, never a file overread. */
+            uint32_t span=r->last-r->first+1;
+            r->count=span<physical ? span : physical;
+        }
+        else if(logical && r->encoding!=9)
+            r->count=logical<physical ? logical : physical;
+        else r->count=physical;
+        if(!r->count) return -1;
     }
     return font->range_count>0 ? 0 : -1;
 }
