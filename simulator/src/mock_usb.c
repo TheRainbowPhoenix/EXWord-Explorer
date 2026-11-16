@@ -1,5 +1,7 @@
 /* Actual USB page renderer, driven by mock progress instead of hardware. */
 #include "usb_screen.h"
+#include "explorer_usb.h"
+uint8_t ex_shared_io[EXFS_PACKET];
 #include <stdio.h>
 extern void sim_capture_named(const char *name);
 void ex_usb_remote_screen(void)
