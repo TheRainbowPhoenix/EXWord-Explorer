@@ -17,6 +17,7 @@ Run `cmake -S simulator -B build-sim` and `cmake --build build-sim` after instal
 Run `./build-sim/explorer_sim --interactive` for the desktop demo.
 Run `./build-sim/explorer_sim --screenshots build-sim/screenshots` to capture the example screens.
 The simulator changes only its own example files.
+On Windows, download the simulator-windows artifact and run `explorer_sim.exe`.
 
 ![EX-word drive selection](docs/screenshots/home.png)
 
@@ -34,8 +35,8 @@ It does not have all the features of the normal add-in.
 It might run on some EX-word E models without DATAPLUS through the Test Menu option **OS Update from SD card**.
 This is not confirmed on real EX-word E hardware.
 It needs a firmware filesystem service that might not exist in the test menu.
-The file is not a firmware update and does not write or flash the OS.
-Using the test menu or an incompatible update image can still damage a device.
+The program contains no filesystem write or flash commands.
+The test menu may still modify firmware when it loads an update file.
 Do not try it without a full backup and a reliable recovery method.
 
 ## 日本語
@@ -56,14 +57,15 @@ Windows と Linux 用のアプリでファイルを送受信できます。
 SDL シミュレーターでは、サンプルファイルを使って画面を試せます。
 上の画像はシミュレーターで撮影したものです。
 シミュレーターは実機のファイルを変更しません。
+Windows では simulator-windows をダウンロードし、`explorer_sim.exe` を実行します。
 
 実験用の `UPDADN2.BIN` もあります。
 これは読み取り専用の簡易ブラウザーです。
 通常のアドインの全機能はありません。
 DATAPLUS ではない EX-word E シリーズでも、テストメニューの「SD カードから OS Update」で起動できる可能性があります。
 実機での動作確認はまだできていません。
-このプログラムは OS を書き換えません。
-ただし、テストメニューや非対応のファイルは本体を壊す危険があります。
+このプログラムには書き込みやフラッシュ操作の命令がありません。
+ただし、テストメニューが更新ファイルを読み込む際にファームウェアを変更する可能性があります。
 完全なバックアップと復旧手段がない場合は使用しないでください。
 
 ## 简体中文
@@ -84,12 +86,13 @@ Windows 和 Linux 客户端可以发送和接收文件。
 SDL 模拟器使用示例文件展示真实的 Explorer 界面。
 上面的截图来自模拟器。
 模拟器不会修改电子词典中的文件。
+在 Windows 上下载 simulator-windows，然后运行 `explorer_sim.exe`。
 
 另外提供实验版 `UPDADN2.BIN`。
 它是独立的只读浏览器，只提供简单的十六进制查看。
 它不包含普通插件的全部功能。
 部分非 DATAPLUS 的 EX-word E 机型可能可以通过测试菜单中的 **从 SD 卡进行 OS Update** 启动它。
 目前没有在 EX-word E 真机上验证。
-这个程序不会刷写系统。
-但是，不兼容的更新文件或测试菜单操作仍可能损坏设备。
+这个程序不包含文件写入或固件刷写命令。
+但是，测试菜单在加载更新文件时仍可能修改固件。
 没有完整备份和可靠恢复方法时，请勿尝试。
