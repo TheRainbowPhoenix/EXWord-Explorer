@@ -16,6 +16,7 @@ from pathlib import Path
 import argparse
 import struct
 import subprocess
+import tempfile
 
 HEADER = b"CASIO CY10x ADDIN MODULE FOR RELEASE ROM\0"
 STUB_SIZE = 0x1080
@@ -41,7 +42,11 @@ def generate(stub_path,elf_path,output_path,objcopy="sh-elf-objcopy",
     header=subprocess.check_output([readelf,"-h",str(elf_path)],text=True)
     if f"0x{APP_ENTRY:x}" not in header:
         raise ValueError("Application must keep original gint entry at 0x70000080")
-    image=subprocess.check_output([objcopy,"-O","binary",str(elf_path),"/dev/stdout"])
+    with tempfile.TemporaryDirectory() as folder:
+        binary=Path(folder)/"app.bin"
+        subprocess.run([objcopy,"-O","binary",str(elf_path),str(binary)],
+                       check=True)
+        image=binary.read_bytes()
     if not 1024<len(image)<=128*1024:
         raise ValueError(f"Full Explorer image too large/small: {len(image)}")
     if all(not b for b in image[:256]):
