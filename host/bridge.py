@@ -89,6 +89,7 @@ class TFTPHandler(socketserver.BaseRequestHandler):
             size = len(source)
         else:
             size = filesystem.stat(path)
+            filesystem.begin_transfer(path, size, writing=False)
         offset, block = 0, 1
         cache_start, cache = 0, b""
         while True:
@@ -134,6 +135,11 @@ class TFTPHandler(socketserver.BaseRequestHandler):
             raise ValueError("Cannot overwrite the virtual directory listing")
         filesystem = self.server.fs
         filesystem.command(3, path)  # create without overwriting
+        try:
+            filesystem.begin_transfer(path, None, writing=True)
+        except Exception:
+            filesystem.remove(path)
+            raise
         ack = struct.pack("!HH", 4, 0)
         expected = 1
         offset = 0
@@ -223,13 +229,25 @@ def gui(filesystem):
     volumes.pack(side="left", padx=6)
     path_label = ttk.Label(toolbar, textvariable=current)
     path_label.pack(side="left", fill="x", expand=True, padx=8)
-    filelist = ttk.Treeview(root, columns=("type", "name"), show="headings",
-                            selectmode="browse")
+    listing_frame = ttk.Frame(root, padding=(8, 0))
+    listing_frame.pack(fill="both", expand=True)
+    listing_frame.columnconfigure(0, weight=1)
+    listing_frame.rowconfigure(0, weight=1)
+    filelist = ttk.Treeview(listing_frame, columns=("type", "name"),
+                            show="headings", selectmode="browse")
+    vertical_scroll = ttk.Scrollbar(listing_frame, orient="vertical",
+                                    command=filelist.yview)
+    horizontal_scroll = ttk.Scrollbar(listing_frame, orient="horizontal",
+                                      command=filelist.xview)
+    filelist.configure(yscrollcommand=vertical_scroll.set,
+                       xscrollcommand=horizontal_scroll.set)
     filelist.heading("type", text="Type")
     filelist.heading("name", text="Name")
     filelist.column("type", width=105, stretch=False)
-    filelist.column("name", width=680)
-    filelist.pack(fill="both", expand=True, padx=8)
+    filelist.column("name", width=770, stretch=False)
+    filelist.grid(row=0, column=0, sticky="nsew")
+    vertical_scroll.grid(row=0, column=1, sticky="ns")
+    horizontal_scroll.grid(row=1, column=0, sticky="ew")
     bottom = ttk.Frame(root, padding=8)
     bottom.pack(fill="x")
     transfer_controls = ttk.Frame(root, padding=(8, 0))
