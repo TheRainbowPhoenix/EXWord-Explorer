@@ -111,27 +111,36 @@ host artifact or update both `bridge.py` and `exfs.py` before retrying.
 
 ## Image and CJF preview
 
-In a directory, select a file, press **Sound**, then choose
-**View bitmap**, **Preview CJF font**, or **View RLE565 (528x320)**. EXE still opens the
-hex viewer for arbitrary files. Bitmaps are rendered on the complete
-528x320 screen (cropped/centered at native resolution); **ESC** returns.
-CJF shows an unlabeled-borderless glyph grid, with hexadecimal glyph
-indexes beneath each image. **Page Up/Down** jumps one grid page,
-**Left/Right** changes CJF range, **ESC** returns to the directory.
+Select a file and press **EXE** to open the hex viewer. Press **SOUND**
+in the **hex viewer** to open its options menu:
 
-The format decoders are portable `src/readers/casio_bitmap.{c,h}`
-and `src/readers/cjf.{c,h}`, with no gint or OS dependency. The
-application-only `src/preview.c` handles native EX-word file reads
-and gint drawing. Both readers use a caller-defined read-at callback,
-so entire files do not need to be loaded into memory. The bitmap reader
-matches Casio packed BIN formats 0/1/2/3 and explicit-dimension
-factory RLE565 runs from the supplied
-`bitmap.py`; it is **not** a decoder for Windows BMP files.
-The CJF reader supports linked ranges, raw glyphs, indexed glyphs,
-and nibble/byte RLE from the supplied `cjf.py`. Unknown CJF
-encodings, oversized glyphs, or unsupported image layouts are rejected
-rather than displayed incorrectly. Standalone native C fixture tests
-run in CI.
+- **Preview as bitmap:** safely decode Casio packed BIN image variants
+  0/1/2/3, limited to at most 1 MiB input, 1024x768 dimensions,
+  512 KiB pixel payload and a bounded row buffer
+- **Preview as font:** offered only for a file whose first 3 bytes are
+  `43 4A 46` (`CJF`)
+- **Factory RLE565 (528x320):** a separate option for headerless factory
+  images no larger than 512 KiB
+
+These previews are no longer in the directory context menu.
+**ESC** from an image or CJF grid returns to the same file and offset
+in the hex viewer. CJF uses an unlabeled-borderless grid with glyph
+indices below each glyph. **PgUp/PgDn** changes glyph pages and
+**Left/Right** switches font ranges.
+
+The `src/readers/casio_bitmap.{c,h}` and `src/readers/cjf.{c,h}`
+decoders are independent of gint and native EX-word APIs, suitable for
+future upstreaming. `src/preview.c` bridges their read-at callbacks to
+the device's filesystem and screen. Bitmap formats are **Casio packed
+BIN**, not standard Windows BMP.
+
+The supplied `sb24f.cjf` uses **encoding 9** and nine ranges with
+**256 physically stored glyph slots** each. The reader now enumerates
+physical slots from range data offsets rather than relying on a known
+character-code mapping. The preview begins at the first nonblank
+glyph so leading empty slots do not make the display appear broken.
+A synthetic regression test reproduces this layout without bundling
+the sample's font artwork.
 
 ## Transfer improvements / stop controls
 
@@ -150,3 +159,16 @@ The Windows fxlink DLL is now built without terminal ANSI escape sequences.
 Actual transfer speed and reliable stop/disconnect behavior still require
 on-device tests; 2048 bytes is a design compromise for limited EX-word RAM,
 not a measured optimum.
+
+## USB Remote display
+
+The landscape USB Remote screen shows a scannable QR code for
+**http://pho3.be/go/exxplorer**, the companion-app address, the local
+PC TFTP endpoint **127.0.0.1:6969**, connected status, request count,
+current transfer's native path, and progress as chunks completed/total.
+The host sends a lightweight EXFS `BEGIN` announcement (command 9)
+with the file size so the device can display accurate upload progress;
+plain TFTP uploads without a known size show `Chunk N / ?` instead.
+The existing **STOP USB** touch button and ESC/AC-ON/SOUND shortcuts
+remain available. Both the updated device package and host scripts
+are required for transfer progress announcements.
