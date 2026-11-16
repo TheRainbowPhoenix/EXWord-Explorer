@@ -17,7 +17,7 @@ typedef struct {
 #define CJF_MAX_RANGES 24
 
 typedef struct {
-    uint32_t offset, first, last, data_offset, count;
+    uint32_t offset, first, last, data_offset, count; /* physical glyph slots */
     uint16_t width, height, glyph_bytes, variant;
     uint8_t encoding, mapping, indexed;
 } cjf_range_t;
@@ -28,8 +28,9 @@ typedef struct {
     cjf_range_t ranges[CJF_MAX_RANGES];
 } cjf_font_t;
 
-/* Return 0 on success, -1 malformed/out of bounds, -2 I/O, -3 unknown
- * character encoding (explicit glyph indices can be used instead). */
+/* Return 0 on success, -1 malformed/out of bounds, -2 I/O.
+ * Glyph previews enumerate physical slots independently of codepage mapping.
+ * Encoding may be unknown (eg encoding 9 in sb24f.cjf). */
 int cjf_open(cjf_stream_t const *file, cjf_font_t *font);
 int cjf_read_glyph(cjf_font_t const *font, int range_index,
     uint32_t glyph_index, uint8_t *bitmap, size_t capacity);
