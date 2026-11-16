@@ -21,14 +21,16 @@ static union { uint8_t glyph[2048]; uint8_t row[1100]; } scratch;
  * Cache adjacent reads, particularly the per-byte CJF run tokens and rows. */
 /* Shares the USB workspace; local preview and USB remote never coexist. */
 #define cache ex_shared_io
+#define PREVIEW_FILE_LIMIT (1024u * 1024u)
+#define PREVIEW_PIXEL_LIMIT (512u * 1024u)
 static uint32_t cache_start;
 static int cache_size;
 
 static int read_at(void *ctx, uint32_t offset, void *buffer, size_t count)
 {
     (void)ctx;
-    if(offset >= (uint32_t)stream.size ||
-       count > (size_t)stream.size - offset) return -1;
+    if(offset > stream.size || count > (size_t)stream.size - offset)
+        return -1;
     if(count==0) return 0;
     if(offset<cache_start || offset-cache_start+count>(size_t)cache_size) {
         int total=0;
@@ -50,12 +52,29 @@ static void plot565(void *ctx, uint16_t x, uint16_t y, uint16_t color)
     if(px>=0 && px<528 && py>=0 && py<320)
         dpixel(px,py,color);
 }
+/* Use a physical glyph index for display even if this CJF encoding has
+   no known codepoint mapper. Many Casio fonts start with blank glyphs. */
+static uint32_t first_visible_glyph(int which)
+{
+    cjf_range_t const *r=&font.ranges[which];
+    if(r->glyph_bytes>sizeof scratch.glyph) return 0;
+    uint32_t scan=r->count;
+    if(scan>512) scan=512; /* bound startup work on damaged fonts */
+    for(uint32_t i=0;i<scan;i++) {
+        if(cjf_read_glyph(&font,which,i,scratch.glyph,
+            sizeof scratch.glyph)) break;
+        for(uint32_t n=0;n<r->glyph_bytes;n++)
+            if(scratch.glyph[n]) return i;
+    }
+    return 0;
+}
 int preview_open(char const *filename, int format)
 {
     uint8_t marker=0;
     int size=0;
     int rc=ex_read(filename,0,&marker,1,&size);
-    if(rc<0 || size<=0) return -1;
+    if(rc<0 || size<=0 || (uint32_t)size>PREVIEW_FILE_LIMIT)
+        return -1;
     snprintf(path,sizeof path,"%s",filename);
     stream.read=read_at;
     stream.user=NULL;
@@ -67,18 +86,22 @@ int preview_open(char const *filename, int format)
     type=format;
     if(format==PREVIEW_BITMAP) {
         rc=casio_bitmap_open(&stream,&bitmap);
-        if(rc || bitmap.stride>sizeof scratch.row) return -1;
+        if(rc || bitmap.width>1024 || bitmap.height>768 ||
+            bitmap.stride>sizeof scratch.row ||
+            (uint64_t)bitmap.stride*bitmap.height>PREVIEW_PIXEL_LIMIT)
+            return -1;
     }
     else if(format==PREVIEW_RLE565) {
+        if((uint32_t)size>PREVIEW_PIXEL_LIMIT) return -1;
         bitmap.width=528;
         bitmap.height=320;
     }
     else if(format==PREVIEW_CJF) {
         cjf_stream_t cjfs={read_at,NULL,(uint32_t)size};
         rc=cjf_open(&cjfs,&font);
-        if(rc) return rc;
-        if(!font.range_count) return -1;
+        if(rc || !font.range_count) return -1;
         if(font.ranges[0].glyph_bytes>sizeof scratch.glyph) return -1;
+        first_glyph=first_visible_glyph(0);
     }
     else return -1;
     return 0;
@@ -118,8 +141,9 @@ void preview_range(int delta)
     if(type!=PREVIEW_CJF) return;
     int next=range_no+delta;
     if(next<0 || next>=font.range_count) return;
+    if(font.ranges[next].glyph_bytes>sizeof scratch.glyph) return;
     range_no=next;
-    first_glyph=0;
+    first_glyph=first_visible_glyph(next);
 }
 int preview_render(void)
 {
