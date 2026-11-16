@@ -117,6 +117,22 @@ void updater_full_boot(void)
     u32 image_end=APP_PHYS+pages*4096u;
     if(ram_phys<image_end && ram_phys+32768u>image_begin)fail(1);
 
+    /* The blob is copied by the updater, not linked into the bootstrap.
+       Reject truncation/corruption before attempting to execute it. */
+    volatile u8 const *payload=(volatile u8 const *)0x8c191080u;
+    u32 hash=2166136261u;
+    for(u32 i=0;i<metadata[1];i++)
+        hash=(hash ^ payload[i])*16777619u;
+    if(hash!=metadata[2] || metadata[3]!=1u)fail(1);
+    /* Flush any dirty P1 data lines deposited by the update loader.
+       Code will execute through a new P0 virtual alias. */
+    for(u32 i=0;i<metadata[1];i+=32) {
+        u32 address=0x8c191080u+i;
+        __asm__ volatile("ocbwb @%0" :: "r"(address) : "memory");
+        __asm__ volatile("icbi @%0" :: "r"(address) : "memory");
+    }
+    __asm__ volatile("synco":::"memory");
+
     /* Choose only free entries BEFORE the last eight slots reserved by
        gint's exword_mmu. Never clobber any valid mapping. */
     unsigned slots[APP_MAX_PAGES];
