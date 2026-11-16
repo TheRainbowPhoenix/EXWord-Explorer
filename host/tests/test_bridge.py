@@ -14,7 +14,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from exfs import (Filesystem, RemoteError, CancelledTransfer, remote_path,
                   FxlinkUSB, FxlinkMessage,
                   CMD_LIST, CMD_READ, CMD_CREATE, CMD_WRITE,
-                  CMD_DELETE, CMD_RENAME, CMD_STAT, CMD_PING)
+                  CMD_DELETE, CMD_RENAME, CMD_STAT, CMD_PING,
+                  CMD_BEGIN)
 from bridge import TFTPServer
 
 
@@ -30,6 +31,8 @@ class FakeTransport:
         self.calls.append((cmd, path))
         if cmd == CMD_PING:
             return 0, b"EXFS/1"
+        if cmd == CMD_BEGIN:
+            return 0, b""
         if cmd == CMD_STAT:
             if path not in self.files:
                 raise RemoteError(-1)
