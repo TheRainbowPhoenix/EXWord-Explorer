@@ -56,7 +56,7 @@ static u32 tlb_page(int slot)
 {
     return UTLB_ADDRESS[slot*64] & 0xfffff000u;
 }
-static int ram_mapping_available(void)
+static int ram_mapping_available(u32 *physical_start)
 {
     /* The normal gint runtime expects 8 contiguous 4-KiB pages of OS RAM
        at 0x74000000, where the EX-word syscalls dispatcher is stored. */
@@ -78,6 +78,7 @@ static int ram_mapping_available(void)
         }
         if(!found)return 0;
     }
+    *physical_start=physical;
     return 1;
 }
 /* Hand off control to the full app ONLY when all required free TLB
@@ -86,10 +87,20 @@ void updater_full_boot(void)
 {
     u32 control=MMUCR;
     if((control&0x81u)!=1u) fail(1);
-    if(!ram_mapping_available()) fail(1);
+    u32 ram_phys=0;
+    if(!ram_mapping_available(&ram_phys)) fail(1);
     int available=(int)((control>>18)&63u);
     if(!available) available=64;
     if(available<=8)fail(1);
+    /* gint reserves the last eight UTLB slots to pin its OS RAM. Do not
+       let that operation silently overwrite unrelated Test Menu mappings. */
+    for(int i=available-8;i<available;i++) {
+        u32 a=UTLB_ADDRESS[i*64],d=UTLB_DATA[i*64];
+        if((a&0x100u) && (d&0x100u) &&
+           (a&0xfffff000u)<RAM_BASE)fail(1);
+        if((a&0x100u) && (d&0x100u) &&
+           (a&0xfffff000u)>=RAM_BASE+32768u)fail(1);
+    }
 
     /* The packer records the full app payload's size at the start of the
        4-KiB stub page's final 16 bytes; it is read at a P1 fixed address.
@@ -99,6 +110,12 @@ void updater_full_boot(void)
        metadata[1]>128u*1024u)fail(1);
     u32 pages=(metadata[1]+128u+4095u)/4096u;
     if(pages<1||pages>APP_MAX_PAGES)fail(1);
+    /* Reject a valid-looking OS RAM map if it aliases the physical image.
+       gint clears BSS early, which would otherwise overwrite executable
+       bytes or the bootstrap's P1 stack. */
+    u32 image_begin=APP_PHYS-4096u;
+    u32 image_end=APP_PHYS+pages*4096u;
+    if(ram_phys<image_end && ram_phys+32768u>image_begin)fail(1);
 
     /* Choose only free entries BEFORE the last eight slots reserved by
        gint's exword_mmu. Never clobber any valid mapping. */
