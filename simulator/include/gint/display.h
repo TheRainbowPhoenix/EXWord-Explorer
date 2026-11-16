@@ -13,6 +13,13 @@ typedef uint16_t color_t;
 #define C_NONE 0x0001
 #define SCREEN_W 528
 #define SCREEN_H 320
+#define DTEXT_LEFT 0
+#define DTEXT_CENTER 1
+#define DTEXT_RIGHT 2
+#define DTEXT_TOP 0
+#define DTEXT_MIDDLE 4
+#define DTEXT_BOTTOM 8
+typedef struct { int x1,y1,x2,y2; } dwindow_t;
 #ifdef __cplusplus
 extern "C" {
 #endif
