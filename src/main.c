@@ -24,7 +24,8 @@
 
 enum { PAGE_LINES = EX_ROWS, HEX_COLS = 12, HEX_PAGE = HEX_COLS * PAGE_LINES };
 enum { SCREEN_VOLUMES, SCREEN_DIRECTORY, SCREEN_HEX, SCREEN_IMAGE, SCREEN_FONT };
-enum { DIALOG_NONE, DIALOG_MENU, DIALOG_NAME, DIALOG_CONFIRM };
+enum { DIALOG_NONE, DIALOG_MENU, DIALOG_NAME, DIALOG_CONFIRM,
+       DIALOG_HEX_MENU };
 enum { ACT_DELETE, ACT_RENAME, ACT_NEW_FILE, ACT_NEW_FOLDER,
        ACT_COPY, ACT_CUT, ACT_PASTE, ACT_PREVIEW_BITMAP,
        ACT_PREVIEW_CJF, ACT_PREVIEW_RLE565, ACT_EDIT };
@@ -49,7 +50,7 @@ typedef struct {
     int input_len;
     char status[100];
 
-    int file_size, byte_offset, page_base, loaded;
+    int file_size, file_is_cjf, byte_offset, page_base, loaded;
     uint8_t hex[HEX_PAGE];
     int editing, digits, pending_byte;
 } app_t;
@@ -57,10 +58,22 @@ static app_t app;
 
 static const char *actions[] = {
     "Delete", "Rename", "Create file", "Create folder",
-    "Copy", "Cut", "Paste", "View bitmap", "Preview CJF font",
-    "View RLE565 (528x320)"
+    "Copy", "Cut", "Paste"
 };
-#define ACTION_COUNT 10
+#define ACTION_COUNT 7
+/* The hex menu interprets an already-open file. File creation and deletion
+   stay in the directory menu. Only CJF files expose the font viewer. */
+static const char *hex_actions[] = {
+    "Preview as bitmap", "Preview as font", "Factory RLE565 (528x320)"
+};
+static int hex_choices(int chosen[3])
+{
+    int count=0;
+    chosen[count++]=0;
+    if(app.file_is_cjf) chosen[count++]=1;
+    if(app.file_size<=512*1024) chosen[count++]=2;
+    return count;
+}
 
 static int min_int(int a, int b) { return a < b ? a : b; }
 static int max_int(int a, int b) { return a > b ? a : b; }
@@ -123,7 +136,6 @@ static void header(const char *path, const char *right)
 }
 static void loading(const char *name)
 {
-    char label[80];
     dclear(C_WHITE);
     header(name, "");
     dtext(220, 143, C_BLACK, "Loading...");
@@ -276,7 +288,7 @@ static void draw_hex(void)
         dtext(55, 269, C_BLACK, buf);
     }
     footer(app.editing ? "Q-P 1-0  A-F hex  EXE save  ESC cancel" :
-        "Arrows byte  PgUp/Dn page  E edit  ESC back");
+        "Arrows byte  PgUp/Dn page  E edit  SOUND options  ESC back");
 }
 
 static int menu_allowed(int option)
@@ -287,9 +299,7 @@ static int menu_allowed(int option)
         !app.rows[app.selected-app.top].truncated;
     int valid = has && !app.rows[app.selected-app.top].truncated;
     if(option == ACT_DELETE || option == ACT_RENAME) return valid;
-    if(option == ACT_COPY || option == ACT_CUT ||
-       option == ACT_PREVIEW_BITMAP || option == ACT_PREVIEW_CJF ||
-       option == ACT_PREVIEW_RLE565) return is_file;
+    if(option == ACT_COPY || option == ACT_CUT) return is_file;
     if(option == ACT_PASTE) return app.clipboard_valid;
     return 1;
 }
@@ -308,6 +318,18 @@ static void draw_dialog(void)
             dtext(52, y, menu_allowed(i) ? C_BLACK : C_DARK, actions[i]);
         }
         dtext(48, 251, C_DARK, "EXE select     ESC close");
+    }
+    else if(app.dialog == DIALOG_HEX_MENU) {
+        int choices[3];
+        int count=hex_choices(choices);
+        dtext(48,78,C_BLACK,"HEX VIEWER - OPTIONS");
+        for(int i=0;i<count;i++) {
+            int y=117+i*32;
+            if(i==app.menu_choice)
+                box_fill(42,y-4,485,y+18,C_LIGHT);
+            dtext(55,y,C_BLACK,hex_actions[choices[i]]);
+        }
+        dtext(48,251,C_DARK,"EXE preview     ESC cancel");
     }
     else if(app.dialog == DIALOG_NAME) {
         const char *what = app.action==ACT_RENAME ? "RENAME" :
@@ -422,11 +444,12 @@ static void enter_selected(void)
     if(app.screen == SCREEN_DIRECTORY &&
        !app.rows[app.selected-app.top].is_dir) {
         int size = 0;
-        uint8_t first = 0;
-        int rc = ex_read(target, 0, &first, 1, &size);
+        uint8_t magic[3]={0};
+        int rc = ex_read(target, 0, magic, 3, &size);
         if(rc < 0) { status_rc("Open", rc); return; }
         copy_string(app.file, sizeof app.file, target);
         app.file_size = size;
+        app.file_is_cjf=(rc==3 && !memcmp(magic,"CJF",3));
         app.byte_offset = 0;
         app.page_base = -1;
         app.loaded = -1;
@@ -458,10 +481,12 @@ static void enter_selected(void)
 static void go_back(void)
 {
     app.status[0] = 0;
-    if(app.screen == SCREEN_HEX || app.screen == SCREEN_IMAGE ||
-       app.screen == SCREEN_FONT) {
-        app.screen = SCREEN_DIRECTORY;
-        app.editing = 0;
+    if(app.screen == SCREEN_IMAGE || app.screen == SCREEN_FONT) {
+        app.screen=SCREEN_HEX; /* previews return to the same hex offset */
+    }
+    else if(app.screen == SCREEN_HEX) {
+        app.screen=SCREEN_DIRECTORY;
+        app.editing=0;
         reload_directory();
     }
     else if(app.screen == SCREEN_DIRECTORY) {
@@ -486,9 +511,20 @@ static void go_back(void)
 }
 static void start_context(void)
 {
-    if(app.screen != SCREEN_DIRECTORY) return;
-    app.dialog = DIALOG_MENU;
-    app.menu_choice = ACT_NEW_FILE;
+    if(app.screen == SCREEN_HEX && !app.editing) {
+        /* Recheck after hex edits so the font action never appears on
+           non-CJF data. CJF signature is the first three raw bytes. */
+        uint8_t magic[3]={0};
+        int size=0;
+        int rc=ex_read(app.file,0,magic,3,&size);
+        app.file_is_cjf=(rc==3 && !memcmp(magic,"CJF",3));
+        app.dialog=DIALOG_HEX_MENU;
+        app.menu_choice=0;
+    }
+    else if(app.screen == SCREEN_DIRECTORY) {
+        app.dialog=DIALOG_MENU;
+        app.menu_choice=ACT_NEW_FILE;
+    }
 }
 static void start_name(int action)
 {
@@ -577,16 +613,6 @@ static void invoke_action(int action)
     if(current_entry_path(app.source) < 0) {
         status_message("Cannot select that entry"); return;
     }
-    if(action == ACT_PREVIEW_BITMAP || action == ACT_PREVIEW_CJF ||
-       action == ACT_PREVIEW_RLE565) {
-        int type=action==ACT_PREVIEW_BITMAP ? PREVIEW_BITMAP :
-            action==ACT_PREVIEW_CJF ? PREVIEW_CJF : PREVIEW_RLE565;
-        loading(app.source);
-        int rc=preview_open(app.source,type);
-        if(rc<0) { status_rc("Unsupported preview", rc); return; }
-        app.screen=type==PREVIEW_CJF ? SCREEN_FONT : SCREEN_IMAGE;
-        return;
-    }
     if(action == ACT_RENAME) { start_name(ACT_RENAME); return; }
     if(action == ACT_DELETE) {
         app.action = ACT_DELETE;
@@ -602,6 +628,20 @@ static void invoke_action(int action)
         status_message(action==ACT_CUT ? "Cut: navigate then paste" :
             "Copied to clipboard");
     }
+}
+static void hex_preview(int option)
+{
+    int type=option==0 ? PREVIEW_BITMAP :
+        option==1 ? PREVIEW_CJF : PREVIEW_RLE565;
+    app.dialog=DIALOG_NONE;
+    loading(app.file);
+    int rc=preview_open(app.file,type);
+    if(rc<0) {
+        status_message("Unsupported, invalid or oversized preview");
+        return;
+    }
+    app.status[0]=0;
+    app.screen=type==PREVIEW_CJF ? SCREEN_FONT : SCREEN_IMAGE;
 }
 static void finish_confirm(void)
 {
@@ -719,6 +759,18 @@ static void handle_key(key_event_t ev)
         if(ev.type==KEYEV_DOWN) name_key(ev);
         return;
     }
+    if(app.dialog==DIALOG_HEX_MENU) {
+        int choices[3];
+        int count=hex_choices(choices);
+        if(ev.key==KEY_EXIT) app.dialog=DIALOG_NONE;
+        else if(ev.key==KEY_UP || ev.key==KEY_DOWN) {
+            int delta=ev.key==KEY_UP ? -1 : 1;
+            app.menu_choice=(app.menu_choice+count+delta)%count;
+        }
+        else if(ev.key==KEY_EXE && ev.type==KEYEV_DOWN)
+            hex_preview(choices[app.menu_choice]);
+        return;
+    }
     if(app.dialog==DIALOG_MENU) {
         if(ev.key==KEY_EXIT) app.dialog=DIALOG_NONE;
         else if(ev.key==KEY_UP || ev.key==KEY_DOWN) {
@@ -734,7 +786,12 @@ static void handle_key(key_event_t ev)
         }
         return;
     }
-    if(app.screen==SCREEN_HEX) { hex_key(ev); return; }
+    if(app.screen==SCREEN_HEX) {
+        if(ev.key==KEY_EX_AUDIO && ev.type==KEYEV_DOWN && !app.editing)
+            start_context();
+        else hex_key(ev);
+        return;
+    }
     if(app.screen==SCREEN_IMAGE || app.screen==SCREEN_FONT) {
         if(ev.key==KEY_EXIT) go_back();
         else if(app.screen==SCREEN_FONT) {
