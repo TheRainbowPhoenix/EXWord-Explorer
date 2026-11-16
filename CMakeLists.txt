@@ -1,48 +1,45 @@
-# Configure with [fxsdk build-fx] or [fxsdk build-cg], which provide the
-# toolchain file and module path of the fxSDK
-
 cmake_minimum_required(VERSION 3.15)
-project(MyAddin)
+project(EXWordExplorer VERSION 0.1 LANGUAGES C ASM)
 
-include(GenerateG1A)
-include(GenerateG3A)
-include(GenerateHH3)
-include(Fxconv)
-find_package(Gint 2.9 REQUIRED)
-find_package(JustUI 1.0 REQUIRED)
-
-set(SOURCES
-  src/main.c
-  # ...
-)
-# Shared assets, fx-9860G-only assets and fx-CG-50-only assets
-set(ASSETS
-  # ...
-)
-set(ASSETS_fx
-  assets-fx/example.png
-  # ...
-)
-set(ASSETS_cg
-  assets-cg/example.png
-  # ...
-)
-
-fxconv_declare_assets(${ASSETS} ${ASSETS_fx} ${ASSETS_cg} WITH_METADATA)
-
-add_executable(myaddin ${SOURCES} ${ASSETS} ${ASSETS_${FXSDK_PLATFORM}})
-target_compile_options(myaddin PRIVATE -Wall -Wextra -Os -g -flto=auto)
-target_link_libraries(myaddin Gint::Gint JustUI::JustUI)
-
-if("${FXSDK_PLATFORM_LONG}" STREQUAL fx9860G)
-  generate_g1a(TARGET myaddin OUTPUT "MyAddin.g1a"
-    NAME "MyAddin" ICON assets-fx/icon.png)
-elseif("${FXSDK_PLATFORM_LONG}" STREQUAL fxCG50)
-  generate_g3a(TARGET myaddin OUTPUT "MyAddin.g3a"
-    NAME "MyAddin" ICONS assets-cg/icon-uns.png assets-cg/icon-sel.png)
-elseif("${FXSDK_PLATFORM_LONG}" STREQUAL fx9860G_G3A)
-  generate_g3a(TARGET myaddin OUTPUT "MyAddin-fx.g3a"
-    NAME "MyAddin-fx" ICONS assets-cg/icon-uns.png assets-cg/icon-sel.png)
-elseif("${FXSDK_PLATFORM_LONG}" STREQUAL fxCP)
-  generate_hh3(TARGET myaddin OUTPUT "MyAddin.hh3")
+# drv0/crd0/sys0 are EX-word filesystem mounts, not fx-CP HH3 volumes.
+if(NOT FXSDK_PLATFORM_LONG STREQUAL "exword")
+  message(FATAL_ERROR "EXWord Explorer must be built with EXWORD.cmake")
 endif()
+
+include(GenerateD01)
+include(GenerateEXWORDPackage)
+find_package(Gint 2.11 REQUIRED)
+
+add_executable(explorer
+  src/main.c
+  src/explorer_fs.c
+  src/explorer_usb.c
+  src/usb_screen.c
+  src/preview.c
+  src/readers/casio_bitmap.c
+  src/readers/cjf.c
+)
+target_compile_options(explorer PRIVATE
+  -Wall -Wextra -Os -flto=auto -fno-pic -fno-pie
+  -fno-stack-protector -ffunction-sections -fdata-sections)
+target_link_options(explorer PRIVATE
+  -flto=auto -nostdlib -no-pie -Wl,--build-id=none
+  -Wl,--no-warn-rwx-segments -Wl,-Map=explorer.map
+  -Wl,--print-memory-usage)
+target_link_libraries(explorer Gint::Gint)
+
+generate_d01(TARGET explorer
+  OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/explorer.d01"
+  MODULE "explor")
+
+if(NOT DEFINED EXWORD_METADATA_SOURCE)
+  message(FATAL_ERROR "Set EXWORD_METADATA_SOURCE to the EX-word HTML metadata repository")
+endif()
+generate_exword_package(
+  TARGET explorer
+  D01 "${CMAKE_CURRENT_BINARY_DIR}/explorer.d01"
+  APPID "EXPLR"
+  TITLE "EXWord Explorer"
+  HTML_DIR "${EXWORD_METADATA_SOURCE}/html"
+  OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/packages"
+  LOCALES ja cn)

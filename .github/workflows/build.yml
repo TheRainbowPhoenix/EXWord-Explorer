@@ -1,32 +1,299 @@
-name: Build (fx-cp)
+name: Build (EX-word)
 
 on:
   push:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+# Keep only the latest build for each branch/PR to avoid queueing old commits.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
-
-    # Run all steps inside your GHCR image
     container:
       image: ghcr.io/therainbowphoenix/gint-docker:main
-
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
 
-      - name: Build (fxsdk build-cp)
+      - name: Install EX-word fxSDK and converter
+        shell: bash
         run: |
-          fxsdk build-cp
+          set -euo pipefail
+          git clone --depth=1 --branch fix/exword-data-load-alignment \
+            https://github.com/TheRainbowPhoenix/fxsdk-exword.git /tmp/fxsdk-src
+          cmake -S /tmp/fxsdk-src -B /tmp/fxsdk-build \
+            -DCMAKE_INSTALL_PREFIX=/tmp/fxsdk-exword \
+            -DFXLINK_DISABLE_SDL2=ON -DFXLINK_DISABLE_UDISKS2=ON
+          cmake --build /tmp/fxsdk-build --parallel 2
+          cmake --install /tmp/fxsdk-build
+          git clone --depth=1 https://github.com/brijohn/elf2d01.git /tmp/elf2d01
+          cc -O2 /tmp/elf2d01/elf2d01.c -o /tmp/fxsdk-exword/bin/elf2d01
+          echo /tmp/fxsdk-exword/bin >> "$GITHUB_PATH"
 
-      - name: Upload MyAddin.hh3
+      - name: Build EX-word gint kernel
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth=1 --branch feature/exword-runtime-bridge \
+            https://github.com/TheRainbowPhoenix/gint-exword.git /tmp/gint-src
+          cmake -S /tmp/gint-src -B /tmp/gint-build \
+            -DCMAKE_TOOLCHAIN_FILE=/tmp/fxsdk-exword/lib/cmake/fxsdk/EXWORD.cmake \
+            -DCMAKE_INSTALL_PREFIX=/tmp/gint-exword \
+            -DCMAKE_MODULE_PATH=/tmp/fxsdk-exword/lib/cmake/fxsdk
+          cmake --build /tmp/gint-build --parallel 2
+          cmake --install /tmp/gint-build
+
+      - name: Build explorer and packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth=1 --branch main \
+            https://github.com/TheRainbowPhoenix/exword-xd-a8500-TEST.git /tmp/exword-metadata
+          cmake -S . -B build-exword \
+            -DCMAKE_TOOLCHAIN_FILE=/tmp/fxsdk-exword/lib/cmake/fxsdk/EXWORD.cmake \
+            -DCMAKE_PREFIX_PATH=/tmp/gint-exword \
+            '-DCMAKE_MODULE_PATH=/tmp/gint-exword/lib/cmake/fxsdk;/tmp/fxsdk-exword/lib/cmake/fxsdk' \
+            -DEXWORD_METADATA_SOURCE=/tmp/exword-metadata
+          cmake --build build-exword --parallel 2
+          test -s build-exword/explorer.d01
+          test "$(stat -c %s build-exword/explorer.d01)" -le 131072
+          for locale in ja cn; do
+            package="build-exword/packages/${locale}/EXPLR"
+            test -s "$package/explorer.d01"
+            test -s "$package/diction.htm"
+            test -f "$package/fileinfo.cji"
+          done
+
+      - name: Build experimental standalone UPDADN2 image
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S updater -B build-updater \
+            -DCMAKE_TOOLCHAIN_FILE=/tmp/fxsdk-exword/lib/cmake/fxsdk/EXWORD.cmake \
+            -DCMAKE_MODULE_PATH=/tmp/fxsdk-exword/lib/cmake/fxsdk
+          cmake --build build-updater --parallel 2
+          python3 - <<'PY'
+          import struct
+          import subprocess
+          from pathlib import Path
+          p=Path("build-updater/UPDADN2.BIN")
+          image=p.read_bytes()
+          assert image.startswith(b"CASIO CY10x ADDIN MODULE FOR RELEASE ROM\0")
+          assert struct.unpack_from(">II",image,48)==(0x8c18ff80,0x8c190000)
+          assert 128 < len(image) < 1048576
+          elf=Path("build-updater/explorer_upd")
+          head=subprocess.check_output(["sh-elf-readelf","-h",str(elf)],text=True)
+          assert "0x8c190000" in head
+          symbols=subprocess.check_output(["sh-elf-nm","-a",str(elf)],text=True)
+          for forbidden in ["exword_sys_write","exword_sys_create",
+              "exword_sys_delete","exword_sys_sdformat","exword_sys_write2"]:
+              assert forbidden not in symbols, forbidden
+          print("UPDADN2 header, entry point and no-write checks passed")
+          PY
+
+      - name: Upload experimental standalone test-menu browser
         uses: actions/upload-artifact@v4
         with:
-          name: MyAddin.hh3
-          path: MyAddin.hh3
+          name: EXWord-Explorer-UPDADN2-experimental
+          path: build-updater/UPDADN2.BIN
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Build Linux libfxlink and check Python bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p host-dist
+          cc -std=c11 -D_GNU_SOURCE -fPIC -shared -O2 \
+            -I/tmp/fxsdk-src/libfxlink/include -I/tmp/fxsdk-build/include \
+            /tmp/fxsdk-src/libfxlink/defs.c \
+            /tmp/fxsdk-src/libfxlink/devices.c \
+            /tmp/fxsdk-src/libfxlink/filter.c \
+            /tmp/fxsdk-src/libfxlink/logging.c \
+            /tmp/fxsdk-src/libfxlink/protocol.c \
+            -o host-dist/libfxlink.so \
+            $(pkg-config --cflags --libs libusb-1.0) -lm
+          cp host/exfs.py host/bridge.py host-dist/
+          cp /tmp/fxsdk-exword/bin/fxlink host-dist/
+          python3 -c 'import sys;sys.path.insert(0,"host");from exfs import FxlinkUSB; x=FxlinkUSB("host-dist/libfxlink.so"); x.close()'
+          python3 -m compileall -q host
+          cc -std=c11 -O2 -Wall -Wextra -Werror \
+            tests/readers.c src/readers/casio_bitmap.c src/readers/cjf.c \
+            -o host-dist/test-readers
+          ./host-dist/test-readers
+          python3 -m unittest discover -s host/tests -v
+          python3 host/bridge.py --help >/dev/null
+
+      - name: Upload Linux USB/TFTP host bridge
+        uses: actions/upload-artifact@v4
+        with:
+          name: EXWord-Explorer-host-linux
+          path: host-dist/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Japanese EX-word installation folder
+        uses: actions/upload-artifact@v4
+        with:
+          name: EXWord-Explorer-ja
+          path: build-exword/packages/ja/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Chinese EX-word installation folder
+        uses: actions/upload-artifact@v4
+        with:
+          name: EXWord-Explorer-cn
+          path: build-exword/packages/cn/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload debugging ELF and map
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: EXWord-Explorer-debug
+          path: |
+            build-exword/explorer
+            build-exword/explorer.map
+          if-no-files-found: warn
+          retention-days: 14
+
+  simulator:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install SDL2 build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev
+      - name: Build the real Explorer UI against NCInput SDL mocks
+        run: |
+          cmake -S simulator -B build-sim -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-sim --parallel 2
+      - name: Capture 528x320 Explorer mock screens
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+        run: |
+          mkdir -p build-sim/screenshots
+          ./build-sim/explorer_sim --screenshots build-sim/screenshots
+          python3 simulator/bmp_to_png.py build-sim/screenshots
+      - name: Check screenshot metadata and serialize for docs
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+          folder=Path("build-sim/screenshots")
+          names=["home","directory","hex-viewer","hex-options",
+                 "font-grid","bitmap","usb-remote"]
+          for name in names:
+              data=(folder/f"{name}.png").read_bytes()
+              assert data.startswith(b"\x89PNG\r\n\x1a\n")
+              assert struct.unpack(">II",data[16:24])==(528,320)
+          print("Seven simulator screens passed format and dimension assertions")
+          PY
+      - name: Upload simulator screenshots and binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: EXWord-Explorer-simulator-linux
+          path: |
+            build-sim/explorer_sim
+            build-sim/screenshots/*.png
+          if-no-files-found: error
+          retention-days: 14
+      - name: Export reproducible screenshot PNGs for README
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          for image in build-sim/screenshots/*.png; do
+            name="$(basename "$image" .png)"
+            printf 'SIM_PNG:%s:' "$name"
+            base64 -w 0 "$image"
+            printf '\n'
+          done
+
+  host-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install MinGW toolchain and libusb
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-libusb
+            mingw-w64-ucrt-x86_64-SDL2
+            mingw-w64-ucrt-x86_64-libpng
+            mingw-w64-ucrt-x86_64-ncurses
+
+      - name: Build Windows libfxlink DLL
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          git clone --depth=1 --branch fix/exword-data-load-alignment \
+            https://github.com/TheRainbowPhoenix/fxsdk-exword.git fxsdk-src
+          sed -i 's/add_library(libfxlink STATIC/add_library(libfxlink/' fxsdk-src/CMakeLists.txt
+          cmake -S fxsdk-src -B fxsdk-win-build -G Ninja \
+            -DBUILD_SHARED_LIBS=ON \
+            -DFXLINK_DISABLE_SDL2=ON -DFXLINK_DISABLE_UDISKS2=ON \
+            -DFXLINK_DISABLE_POLL=ON -DFXLINK_DISABLE_ANSIESC=ON
+          cmake --build fxsdk-win-build --target libfxlink --parallel 2
+          mkdir -p host-dist
+          cp fxsdk-win-build/libfxlink.dll host-dist/
+          cp /ucrt64/bin/libusb-1.0.dll host-dist/
+          for dll in libgcc_s_seh-1.dll libwinpthread-1.dll; do
+            if test -f "/ucrt64/bin/$dll"; then
+              cp "/ucrt64/bin/$dll" host-dist/
+            fi
+          done
+          cp host/bridge.py host/exfs.py host-dist/
+          test -s host-dist/libfxlink.dll
+
+      - name: Upload Windows USB/TFTP host bridge
+        uses: actions/upload-artifact@v4
+        with:
+          name: EXWord-Explorer-host-windows
+          path: host-dist/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Build Windows NCInput Explorer demo
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          cmake -S simulator -B simulator-win -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build simulator-win --parallel 2
+          mkdir -p simulator-win-dist
+          cp simulator-win/explorer_sim.exe simulator-win-dist/
+          cp /ucrt64/bin/SDL2.dll simulator-win-dist/
+          for dll in libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll; do
+            if test -f "/ucrt64/bin/$dll"; then
+              cp "/ucrt64/bin/$dll" simulator-win-dist/
+            fi
+          done
+          test -s simulator-win-dist/explorer_sim.exe
+
+      - name: Upload Windows mock filesystem simulator
+        uses: actions/upload-artifact@v4
+        with:
+          name: EXWord-Explorer-simulator-windows
+          path: simulator-win-dist/
           if-no-files-found: error
           retention-days: 14
