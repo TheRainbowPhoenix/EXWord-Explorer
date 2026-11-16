@@ -106,6 +106,44 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Build full Explorer experimental UPDADN2 image
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S updater/full -B build-updater-full \
+            -DCMAKE_TOOLCHAIN_FILE=/tmp/fxsdk-exword/lib/cmake/fxsdk/EXWORD.cmake \
+            -DCMAKE_MODULE_PATH=/tmp/fxsdk-exword/lib/cmake/fxsdk
+          cmake --build build-updater-full --parallel 2
+          python3 updater/full/pack_full.py \
+            --stub build-updater-full/fullboot.bin \
+            --elf build-exword/explorer \
+            --out build-updater-full/UPDADN2.BIN
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+          stub=Path("build-updater-full/fullboot.bin").read_bytes()
+          image=Path("build-updater-full/UPDADN2.BIN").read_bytes()
+          assert len(stub)==0x1080
+          assert image[:0x80]==stub[:0x80]
+          assert struct.unpack_from(">II", image, 48)==(0x8c18ff80,0x8c190000)
+          magic,size,hash_value,flags=struct.unpack_from(">IIII",image,0x1070)
+          assert magic==0x45584653 and flags==1
+          assert image[0x1080:0x1100]==bytes(128)
+          assert len(image)==0x1100+size
+          assert 0x1000<size<=0x20000
+          assert b"USB REMOTE" in image[0x1100:]
+          assert b"Preview as bitmap" in image[0x1100:]
+          print("Full UPDADN2 embeds native gint Explorer, USB and bitmap options",size)
+          PY
+
+      - name: Upload full Explorer UPDADN2 (EXPERIMENTAL - DO NOT FLASH)
+        uses: actions/upload-artifact@v4
+        with:
+          name: EXWord-Explorer-FULL-UPDADN2-UNTESTED
+          path: build-updater-full/UPDADN2.BIN
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Build Linux libfxlink and check Python bridge
         shell: bash
         run: |
