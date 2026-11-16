@@ -20,7 +20,7 @@ enum { KEY_0=200, KEY_1, KEY_2, KEY_3, KEY_4, KEY_5,
 void clearevents(void);
 key_event_t pollevent(void);
 key_event_t waitevent(void *unused);
-key_event_t getkey(void);
+int getkey(void);
 int keydown(int key);
 #ifdef __cplusplus
 }
