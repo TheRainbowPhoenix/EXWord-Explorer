@@ -362,8 +362,11 @@ static void draw_dialog(void)
 static void redraw(void)
 {
     if(app.screen == SCREEN_IMAGE || app.screen == SCREEN_FONT) {
-        if(preview_render()<0) status_message("Preview rendering failed");
-        return;
+        if(preview_render()>=0) return;
+        /* An invalid or truncated image must not trap the user on a
+           half-drawn screen: return to the original hex file view. */
+        app.screen=SCREEN_HEX;
+        status_message("Preview failed (invalid file or encoding)");
     }
     dclear(C_WHITE);
     if(app.screen == SCREEN_VOLUMES) draw_volumes();
