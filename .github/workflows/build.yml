@@ -239,6 +239,7 @@ jobs:
             mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-pkgconf
             mingw-w64-ucrt-x86_64-libusb
+            mingw-w64-ucrt-x86_64-SDL2
             mingw-w64-ucrt-x86_64-libpng
             mingw-w64-ucrt-x86_64-ncurses
 
@@ -270,5 +271,29 @@ jobs:
         with:
           name: EXWord-Explorer-host-windows
           path: host-dist/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Build Windows NCInput Explorer demo
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          cmake -S simulator -B simulator-win -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build simulator-win --parallel 2
+          mkdir -p simulator-win-dist
+          cp simulator-win/explorer_sim.exe simulator-win-dist/
+          cp /ucrt64/bin/SDL2.dll simulator-win-dist/
+          for dll in libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll; do
+            if test -f "/ucrt64/bin/$dll"; then
+              cp "/ucrt64/bin/$dll" simulator-win-dist/
+            fi
+          done
+          test -s simulator-win-dist/explorer_sim.exe
+
+      - name: Upload Windows mock filesystem simulator
+        uses: actions/upload-artifact@v4
+        with:
+          name: EXWord-Explorer-simulator-windows
+          path: simulator-win-dist/
           if-no-files-found: error
           retention-days: 14
